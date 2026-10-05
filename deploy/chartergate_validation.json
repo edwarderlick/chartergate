@@ -1,0 +1,204 @@
+{
+  "checkedAt": "2026-10-05T09:02:37.684Z",
+  "network": "studio-dev",
+  "runnerDepends": "py-genlayer:5jycge4q8k23462jtb0b9fyey1s9qz928sz2nbrd9mg4sxqg2qng",
+  "runnerStdlib": "py-lib-genlayer-std:kzr02ndm9et4qkmbqpq5djjt5sme2yt76n7sz1qbzax0knt6mam0",
+  "unsupportedCallbackFinding": "The pinned SDK bootloader dispatches __receive__ and __handle_undefined_method__ only; it has no __on_errored_message__ branch. The pinned schema generator rejects public method names beginning with double underscores.",
+  "originalValidation": {
+    "ok": false,
+    "error": {
+      "name": "InternalRpcError",
+      "message": "An internal error was received.\n\nDetails: ('execution failed', {'stdout': '', 'stderr': 'Traceback (most recent call last):\\n  File \"/py/libs/_genlayer_bootloader.py\", line 162, in <module>\\n    _handle_main()\\n    ~~~~~~~~~~~~^^\\n  File \"/py/libs/_genlayer_bootloader.py\", line 153, in _handle_main\\n    meth2call = resolve_method(ctx)\\n  File \"/py/libs/_genlayer_bootloader.py\", line 104, in resolve_method\\n    _give_result(ctx.contract_type.__get_schema__)\\n    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\\n  File \"/py/libs/_genlayer_bootloader.py\", line 61, in _give_result\\n    res = res_fn()\\n  File \"/py/libs/genlayer/contract/__init__.py\", line 692, in __get_schema__\\n    res = _get_schema.get_schema(cls)\\n  File \"/py/libs/genlayer/_internal/get_schema.py\", line 201, in get_schema\\n    raise TypeError(f\\'public method names should not start with `__`, `{k}`\\')\\nTypeError: public method names should not start with `__`, `__on_errored_message__`\\n', 'genvm_log': [{'ts': '1791190958206', 'target': 'genvm_common', 'message': 'logging initialized', 'version': 'v0.3.0-rc7-x86_64-linux-release', 'file': 'crates/common/src/lib.rs:66', 'level': 'info'}, {'ts': '1791190958218', 'target': 'genvm::exe::run', 'message': 'genvm id', 'genvm_id': '116', 'file': 'src/exe/run.rs:368', 'level': 'info'}, {'ts': '1791190958232', 'target': 'genvm::rt::supervisor::actions', 'message': 'runner load', 'runner': 'chain:0x0000000000000000000000000000000000000000:d:q805cc3mbb7k055ay5hek4sg80r2s85yyftpzrpq7g50hy1cc45g', 'runner_load_cost': '4096', 'size': '16993', 'status': 'charged', 'file': 'src/rt/supervisor/actions.rs:357', 'level': 'info'}, {'ts': '1791190958232', 'target': 'genvm::rt::supervisor::actions', 'message': 'runner load', 'runner': 'py-genlayer:5jycge4q8k23462jtb0b9fyey1s9qz928sz2nbrd9mg4sxqg2qng', 'runner_load_cost': '4096', 'size': '530', 'status': 'charged', 'file': 'src/rt/supervisor/actions.rs:357', 'level': 'info'}, {'ts': '1791190958232', 'target': 'genvm::rt::supervisor::actions', 'message': 'runner load', 'runner': 'chain:0x0000000000000000000000000000000000000000:d:q805cc3mbb7k055ay5hek4sg80r2s85yyftpzrpq7g50hy1cc45g', 'runner_load_cost': '4096', 'size': '16993', 'status': 'cached', 'file': 'src/rt/supervisor/actions.rs:357', 'level': 'info'}, {'ts': '1791190958233', 'target': 'genvm::rt::supervisor::actions', 'message': 'runner load', 'runner': 'py-lib-cloudpickle:9kem275vsxfhtjf6q49xjw051ybdvzmpmtmsd52aby20g1359sqg', 'runner_load_cost': '4096', 'size': '104486', 'status': 'charged', 'file': 'src/rt/supervisor/actions.rs:357', 'level': 'info'}, {'ts': '1791190958235', 'target': 'genvm::rt::supervisor::actions', 'message': 'runner load', 'runner': 'py-lib-genlayer-std:kzr02ndm9et4qkmbqpq5djjt5sme2yt76n7sz1qbzax0knt6mam0', 'runner_load_cost': '4096', 'size': '701089', 'status': 'charged', 'file': 'src/rt/supervisor/actions.rs:357', 'level': 'info'}, {'ts': '1791190958371', 'target': 'genvm::rt::supervisor::actions', 'message': 'runner load', 'runner': 'cpython:3t4hs1eyrs8rb0qf538cbc227jskqeke9pfys0vaftapv91xn9v0', 'runner_load_cost': '4096', 'size': '114109381', 'status': 'charged', 'file': 'src/rt/supervisor/actions.rs:357', 'level': 'info'}, {'ts': '1791190958375', 'target': 'genvm::rt::supervisor::actions', 'message': 'runner load', 'runner': 'softfloat:v6s4797q2d2x800nhbrwbmsx6v3xe4gfzcdqk3t9s3dkvppvhg20', 'runner_load_cost': '4096', 'size': '39682', 'status': 'charged', 'file': 'src/rt/supervisor/actions.rs:357', 'level': 'info'}, {'ts': '1791190958686', 'target': 'genvm', 'message': 'metrics', 'metrics': {'hosts': [{'time': 9562}, {'time': 0}], 'llm_module': {'calls': 0, 'time': 0}, 'supervisor': {'compilation_time': 0, 'compiled_modules': 0, 'precompile_hits': 2}, 'web_module': {'calls': 0, 'time': 0}}, 'file': 'src/lib.rs:611', 'level': 'info'}], 'result': '{\"kind\": \"VM_ERROR\", \"message\": \"exit_code 1\"}'})\nVersion: viem@2.38.6",
+      "details": "('execution failed', {'stdout': '', 'stderr': 'Traceback (most recent call last):\\n  File \"/py/libs/_genlayer_bootloader.py\", line 162, in <module>\\n    _handle_main()\\n    ~~~~~~~~~~~~^^\\n  File \"/py/libs/_genlayer_bootloader.py\", line 153, in _handle_main\\n    meth2call = resolve_method(ctx)\\n  File \"/py/libs/_genlayer_bootloader.py\", line 104, in resolve_method\\n    _give_result(ctx.contract_type.__get_schema__)\\n    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\\n  File \"/py/libs/_genlayer_bootloader.py\", line 61, in _give_result\\n    res = res_fn()\\n  File \"/py/libs/genlayer/contract/__init__.py\", line 692, in __get_schema__\\n    res = _get_schema.get_schema(cls)\\n  File \"/py/libs/genlayer/_internal/get_schema.py\", line 201, in get_schema\\n    raise TypeError(f\\'public method names should not start with `__`, `{k}`\\')\\nTypeError: public method names should not start with `__`, `__on_errored_message__`\\n', 'genvm_log': [{'ts': '1791190958206', 'target': 'genvm_common', 'message': 'logging initialized', 'version': 'v0.3.0-rc7-x86_64-linux-release', 'file': 'crates/common/src/lib.rs:66', 'level': 'info'}, {'ts': '1791190958218', 'target': 'genvm::exe::run', 'message': 'genvm id', 'genvm_id': '116', 'file': 'src/exe/run.rs:368', 'level': 'info'}, {'ts': '1791190958232', 'target': 'genvm::rt::supervisor::actions', 'message': 'runner load', 'runner': 'chain:0x0000000000000000000000000000000000000000:d:q805cc3mbb7k055ay5hek4sg80r2s85yyftpzrpq7g50hy1cc45g', 'runner_load_cost': '4096', 'size': '16993', 'status': 'charged', 'file': 'src/rt/supervisor/actions.rs:357', 'level': 'info'}, {'ts': '1791190958232', 'target': 'genvm::rt::supervisor::actions', 'message': 'runner load', 'runner': 'py-genlayer:5jycge4q8k23462jtb0b9fyey1s9qz928sz2nbrd9mg4sxqg2qng', 'runner_load_cost': '4096', 'size': '530', 'status': 'charged', 'file': 'src/rt/supervisor/actions.rs:357', 'level': 'info'}, {'ts': '1791190958232', 'target': 'genvm::rt::supervisor::actions', 'message': 'runner load', 'runner': 'chain:0x0000000000000000000000000000000000000000:d:q805cc3mbb7k055ay5hek4sg80r2s85yyftpzrpq7g50hy1cc45g', 'runner_load_cost': '4096', 'size': '16993', 'status': 'cached', 'file': 'src/rt/supervisor/actions.rs:357', 'level': 'info'}, {'ts': '1791190958233', 'target': 'genvm::rt::supervisor::actions', 'message': 'runner load', 'runner': 'py-lib-cloudpickle:9kem275vsxfhtjf6q49xjw051ybdvzmpmtmsd52aby20g1359sqg', 'runner_load_cost': '4096', 'size': '104486', 'status': 'charged', 'file': 'src/rt/supervisor/actions.rs:357', 'level': 'info'}, {'ts': '1791190958235', 'target': 'genvm::rt::supervisor::actions', 'message': 'runner load', 'runner': 'py-lib-genlayer-std:kzr02ndm9et4qkmbqpq5djjt5sme2yt76n7sz1qbzax0knt6mam0', 'runner_load_cost': '4096', 'size': '701089', 'status': 'charged', 'file': 'src/rt/supervisor/actions.rs:357', 'level': 'info'}, {'ts': '1791190958371', 'target': 'genvm::rt::supervisor::actions', 'message': 'runner load', 'runner': 'cpython:3t4hs1eyrs8rb0qf538cbc227jskqeke9pfys0vaftapv91xn9v0', 'runner_load_cost': '4096', 'size': '114109381', 'status': 'charged', 'file': 'src/rt/supervisor/actions.rs:357', 'level': 'info'}, {'ts': '1791190958375', 'target': 'genvm::rt::supervisor::actions', 'message': 'runner load', 'runner': 'softfloat:v6s4797q2d2x800nhbrwbmsx6v3xe4gfzcdqk3t9s3dkvppvhg20', 'runner_load_cost': '4096', 'size': '39682', 'status': 'charged', 'file': 'src/rt/supervisor/actions.rs:357', 'level': 'info'}, {'ts': '1791190958686', 'target': 'genvm', 'message': 'metrics', 'metrics': {'hosts': [{'time': 9562}, {'time': 0}], 'llm_module': {'calls': 0, 'time': 0}, 'supervisor': {'compilation_time': 0, 'compiled_modules': 0, 'precompile_hits': 2}, 'web_module': {'calls': 0, 'time': 0}}, 'file': 'src/lib.rs:611', 'level': 'info'}], 'result': '{\"kind\": \"VM_ERROR\", \"message\": \"exit_code 1\"}'})",
+      "shortMessage": "An internal error was received."
+    }
+  },
+  "finalValidation": {
+    "ok": true,
+    "methodNames": [
+      "deposit",
+      "finalize",
+      "get_error",
+      "get_proposal",
+      "propose",
+      "release_expired",
+      "screen_proposal",
+      "vote",
+      "withdraw_treasury"
+    ],
+    "schema": {
+      "ctor": {
+        "params": [
+          [
+            "sponsor",
+            "string"
+          ],
+          [
+            "charter_text",
+            "string"
+          ],
+          [
+            "members",
+            "string"
+          ],
+          [
+            "quorum",
+            "int"
+          ],
+          [
+            "threshold",
+            "int"
+          ],
+          [
+            "sunset_time",
+            "int"
+          ]
+        ],
+        "kwparams": {}
+      },
+      "methods": {
+        "deposit": {
+          "params": [],
+          "kwparams": {},
+          "readonly": false,
+          "ret": "null",
+          "payable": true
+        },
+        "finalize": {
+          "params": [
+            [
+              "pid",
+              "int"
+            ]
+          ],
+          "kwparams": {},
+          "readonly": false,
+          "ret": "null",
+          "payable": false
+        },
+        "get_error": {
+          "params": [],
+          "kwparams": {},
+          "readonly": true,
+          "ret": "string"
+        },
+        "get_proposal": {
+          "params": [
+            [
+              "pid",
+              "int"
+            ]
+          ],
+          "kwparams": {},
+          "readonly": true,
+          "ret": "dict"
+        },
+        "propose": {
+          "params": [
+            [
+              "recipient",
+              "string"
+            ],
+            [
+              "amount",
+              "int"
+            ],
+            [
+              "purpose",
+              "string"
+            ],
+            [
+              "evidence_url",
+              "string"
+            ],
+            [
+              "evidence_hash",
+              "string"
+            ],
+            [
+              "screen_deadline",
+              "int"
+            ],
+            [
+              "vote_deadline",
+              "int"
+            ]
+          ],
+          "kwparams": {},
+          "readonly": false,
+          "ret": "int",
+          "payable": false
+        },
+        "release_expired": {
+          "params": [
+            [
+              "pid",
+              "int"
+            ]
+          ],
+          "kwparams": {},
+          "readonly": false,
+          "ret": "null",
+          "payable": false
+        },
+        "screen_proposal": {
+          "params": [
+            [
+              "pid",
+              "int"
+            ]
+          ],
+          "kwparams": {},
+          "readonly": false,
+          "ret": "null",
+          "payable": false
+        },
+        "vote": {
+          "params": [
+            [
+              "pid",
+              "int"
+            ],
+            [
+              "approve",
+              "bool"
+            ]
+          ],
+          "kwparams": {},
+          "readonly": false,
+          "ret": "null",
+          "payable": false
+        },
+        "withdraw_treasury": {
+          "params": [
+            [
+              "amount",
+              "int"
+            ]
+          ],
+          "kwparams": {},
+          "readonly": false,
+          "ret": "null",
+          "payable": false
+        }
+      }
+    }
+  },
+  "deployment": {
+    "address": "0x6905BF2041682aCea85b2d24Cb02BAa271BB5700",
+    "txHash": "0x1887de6926c6281b08a227c676b17db185c94ad4e0f6678fcdcb058a06fc8bec",
+    "receipt": {
+      "contract_address": "0x6905BF2041682aCea85b2d24Cb02BAa271BB5700",
+      "deploy_tx": "0x1887de6926c6281b08a227c676b17db185c94ad4e0f6678fcdcb058a06fc8bec",
+      "operator": "0xBb4e0fD1CEaC9F8db17242CF86decDcdd45FA48a",
+      "network": "studio_devnet",
+      "chain_id": 61997,
+      "explorer": "https://explorer-studio-dev.genlayer.com/address/0x6905BF2041682aCea85b2d24Cb02BAa271BB5700?chain=studio-devnet"
+    }
+  },
+  "codeHashComparison": {
+    "localSha256": "9ceae4d0b0a1963cb0282054a229d5e6721b93354422dd3feb7dbda3072e501e",
+    "remoteSha256": "9ceae4d0b0a1963cb0282054a229d5e6721b93354422dd3feb7dbda3072e501e",
+    "match": true
+  }
+}

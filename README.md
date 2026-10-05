@@ -1,143 +1,41 @@
-# Sample GenLayer project
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/license/mit/)
-[![Discord](https://img.shields.io/badge/Discord-Join%20us-5865F2?logo=discord&logoColor=white)](https://discord.gg/8Jm4v89VAu)
-[![Telegram](https://img.shields.io/badge/Telegram--T.svg?style=social&logo=telegram)](https://t.me/genlayer)
-[![Twitter](https://img.shields.io/twitter/url/https/twitter.com/yeagerai.svg?style=social&label=Follow%20%40GenLayer)](https://x.com/GenLayer)
-[![GitHub star chart](https://img.shields.io/github/stars/yeagerai/genlayer-project-boilerplate?style=social)](https://star-history.com/#yeagerai/genlayer-js)
+# CharterGate
 
-## About
-This project includes the boilerplate code for a GenLayer use case implementation, specifically a football bets game.
+CharterGate is a standalone GenLayer Intelligent Contract designed to function as a small group treasury. It enables a group to deposit funds under a fixed, frozen charter, and securely manage payouts. The lifecycle depends strictly on **hash-checked web evidence**, **AI eligibility screening**, and a **mandatory member vote** for every payout.
 
-## What's included
-- An example intelligent contract (Football Bets) with web access and LLM integration
-- **Direct mode tests** — fast, in-memory unit tests with web/LLM mocking (~ms per test)
-- **Integration tests** — full end-to-end tests against GenLayer Studio
-- **Contract linting** — static analysis to catch common contract issues before deployment
-- **CI pipeline** — GitHub Actions workflow for linting and direct tests
-- A production-ready Next.js 15 frontend with TypeScript, TanStack Query, and Radix UI
-- Configuration file template and deployment scripts
+## Contract Design
+- **Frozen Charter**: The treasury's purpose (charter) is frozen at creation and acts as the sole rubric for funding decisions.
+- **AI Eligibility Screening**: Evaluates a proposal against the charter based on public web evidence fetched dynamically.
+- **Hash-Checked Evidence**: Evidence fetched from the web is rigorously checked against a proposer-provided SHA-256 hash. If the evidence changes, is too large, or produces a 404 error, the contract fails-closed, immediately terminating the proposal.
+- **Mandatory Member Vote**: AI eligibility alone is never sufficient for a payout. Once a proposal passes the AI screen, members must vote on it. It must achieve the required quorum and YES vote threshold.
+- **Reservations & Payout**: During the proposal lifecycle, funds are reserved so that eligible proposals are guaranteed funding if finalized. After deadlines pass and votes succeed, a single payout is emitted. 
+- **Deadlines**: The contract uses strict screen and vote deadlines.
+- **Sponsor Recovery**: The sponsor may recover the unreserved treasury funds only after a predetermined sunset timestamp, ensuring safety from permanent lockup without circumventing active proposal guarantees.
+- **Failed-Payment Callback Limitation**: The pinned studio-dev runtime has no accepted `__on_errored_message__` dispatch path, and its schema generator rejects public method names beginning with `__`. The unsupported automatic failed-payment recovery hook was removed rather than renamed into an ordinary public method.
 
-## Requirements
-- Python >= 3.12
-- [GenLayer CLI](https://github.com/genlayerlabs/genlayer-cli) globally installed: `npm install -g genlayer`
-- GenLayer Studio (for integration tests and deployment): Install from [Docs](https://docs.genlayer.com/developers/intelligent-contracts/tooling-setup#using-the-genlayer-studio) or use the hosted [GenLayer Studio](https://studio.genlayer.com/)
+## Why GenLayer?
+CharterGate is only possible due to GenLayer's unique Intelligent Contract capabilities:
+1. **Web Access**: The contract dynamically fetches off-chain receipts, invoices, or project milestones to verify claims. Standard smart contracts cannot perform native HTTP requests.
+2. **LLM Evaluation**: Natural language rules (the charter) are evaluated against unstructured web evidence using LLM-based reasoning, allowing subjective intent-matching that code cannot do.
+3. **`strict_eq` Consensus**: GenLayer's equivalence principle (`strict_eq`) requires validator consensus on exactly formatted boolean LLM outputs, preventing hallucinated payouts.
 
-## Project Structure
+## Links and Evidence
+- **Source Code**: [charter_gate.py](contracts/charter_gate.py)
+- **Focused Tests**: [test_charter_gate.py](tests/direct/test_charter_gate.py)
+- **Test Summary**: [pytest_summary.txt](pytest_summary.txt)
+- **Deployment Receipt**: [receipt.json](deploy/receipt.json)
+- **Schema/Rejection Evidence**: [chartergate_validation.json](deploy/chartergate_validation.json)
+- **Source Hash Evidence**: [deployment_verification.txt](deployment_verification.txt)
+- **Explorer Address**: [0x6905BF2041682aCea85b2d24Cb02BAa271BB5700](https://explorer-studio-dev.genlayer.com/address/0x6905BF2041682aCea85b2d24Cb02BAa271BB5700?chain=studio-devnet)
+- **Explorer Transaction**: [0x1887de6926c6281b08a227c676b17db185c94ad4e0f6678fcdcb058a06fc8bec](https://explorer-studio-dev.genlayer.com/transactions/0x1887de6926c6281b08a227c676b17db185c94ad4e0f6678fcdcb058a06fc8bec?chain=studio-devnet)
 
-```
-contracts/              # Python intelligent contracts
-tests/
-  direct/               # Fast in-memory tests (no Studio required)
-    test_create_bet.py   # Bet creation logic
-    test_resolve_bet.py  # Bet resolution with web/LLM mocks
-    test_views.py        # Read-only view methods
-  integration/           # Full tests against GenLayer Studio
-    test_football_bets.py
-    fixtures.py          # Expected state fixtures
-frontend/               # Next.js 15 app (TypeScript, TanStack Query, Radix UI)
-deploy/                 # TypeScript deployment scripts
-gltest.config.yaml      # Test runner network configuration
-pyproject.toml          # Python/pytest configuration
-.github/workflows/      # CI pipeline
-```
+## Verification Status
+- **Schema Validation**: `gen_getContractSchemaForCode` rejects the original public `__on_errored_message__` method and accepts the corrected source with 9 public methods.
+- **Tests**: 10 focused direct tests passed, including the schema-generation regression.
+- **Payout Verification**: Precisely one payout message was emitted in the direct test. 
+- **Unverified Features**: Live recipient delivery and sponsor recovery after sunset remain unverified on the live network. Automatic failed-payment recovery is unsupported by the pinned runtime/schema pair.
 
-## Quick Start
-
-### 1. Set up Python environment
-
-```shell
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
-
-### 2. Lint your contracts
-
-Run the GenVM linter to catch issues before deployment:
-
-```shell
-genvm-lint check contracts/football_bets.py
-```
-
-The linter catches:
-- Forbidden imports and non-deterministic calls
-- Invalid storage types (must use `TreeMap`, `DynArray`, `u256`, etc.)
-- Missing decorators and return type annotations
-- Non-deterministic operations outside equivalence principle blocks
-- And [20+ other rules](https://github.com/genlayerlabs/genvm-linter)
-
-### 3. Run direct mode tests
-
-Direct mode tests run contracts in-memory without needing GenLayer Studio. They use mocks for web requests and LLM calls, giving you fast feedback (~milliseconds per test):
-
-```shell
-pytest tests/direct/ -v
-```
-
-Direct mode features used in these tests:
-- `direct_deploy("contracts/file.py")` — deploy contract in memory
-- `direct_vm.sender = address` — set transaction sender
-- `direct_vm.mock_web(pattern, response)` — mock HTTP/render calls
-- `direct_vm.mock_llm(pattern, response)` — mock LLM responses
-- `direct_vm.expect_revert("message")` — assert expected failures
-- `direct_vm.clear_mocks()` — reset mocks between calls
-
-### 4. Deploy the contract
-
-1. Choose your network: `genlayer network`
-2. Deploy: `genlayer deploy` (runs the script in `/deploy/deployScript.ts`)
-
-### 5. Run integration tests
-
-Integration tests deploy the contract to GenLayer Studio and test with real consensus:
-
-```shell
-gltest tests/integration/ -v -s
-```
-
-These require GenLayer Studio running (local or hosted).
-
-### 6. Set up the frontend
-
-1. Copy `frontend/.env.example` to `frontend/.env`
-2. Add your deployed contract address as `NEXT_PUBLIC_CONTRACT_ADDRESS`
-3. Run:
-
-```shell
-cd frontend
-npm install
-npm run dev
-```
-
-The app will be available at http://localhost:3000/.
-
-## How the Football Bets Contract Works
-
-1. **Creating Bets**: Users bet on a football match by providing the game date, teams, and predicted winner.
-2. **Resolving Bets**: After the match, the contract fetches results from BBC Sport, uses an LLM to extract the score, and validates via the equivalence principle.
-3. **Points**: Correct predictions earn points. Users can query their points or the leaderboard.
-
-## Testing Strategy
-
-| Test Type | Command | Speed | Requires Studio |
-|-----------|---------|-------|-----------------|
-| **Lint** | `genvm-lint check contracts/*.py` | ~250ms | No |
-| **Direct** | `pytest tests/direct/ -v` | ~ms/test | No |
-| **Integration** | `gltest tests/integration/ -v -s` | ~min/test | Yes |
-
-**Recommended workflow:**
-1. Lint after every contract change
-2. Run direct tests frequently during development
-3. Run integration tests before deployment to verify consensus behavior
-
-For AI coding agents (Claude Code, Cursor, etc.), the linter and direct tests provide the fast feedback loop needed for iterative development without requiring a running Studio instance.
-
-## Community
-- **[Discord](https://discord.gg/8Jm4v89VAu)**: Discussions, support, and announcements
-- **[Telegram](https://t.me/genlayer)**: Informal chats and quick updates
-
-## Documentation
-For detailed information, see our [documentation](https://docs.genlayer.com/).
-
-## License
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+## Final Deployment Details
+- **Address**: `0x6905BF2041682aCea85b2d24Cb02BAa271BB5700`
+- **TX**: `0x1887de6926c6281b08a227c676b17db185c94ad4e0f6678fcdcb058a06fc8bec`
+- **Source SHA-256**: `9ceae4d0b0a1963cb0282054a229d5e6721b93354422dd3feb7dbda3072e501e`
+- **Supersedes**: `0xf175D6ED3fA0a5d416CAd7440EDFdB27e327FB0F`
