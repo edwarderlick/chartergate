@@ -83,9 +83,10 @@ def deploy():
         "operator": str(account.address),
         "network": "studio_devnet",
         "chain_id": 61997,
-        "explorer": f"https://explorer-studio-dev.genlayer.com/address/{contract_address}?chain=studio-devnet"
+        "explorer": f"https://explorer-studio-dev.genlayer.com/address/{contract_address}?chain=studio-devnet",
+        "execution_result": receipt,
     }
-    RECEIPT_FILE.write_text(json.dumps(output, indent=2))
+    RECEIPT_FILE.write_text(json.dumps(output, indent=2, default=str))
     print(f"[deploy] Receipt saved at {RECEIPT_FILE}")
     print(f"[deploy] Explorer: {output['explorer']}")
     return contract_address, tx_hash

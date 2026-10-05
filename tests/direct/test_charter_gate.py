@@ -2,7 +2,6 @@ import json
 import hashlib
 import time
 import pytest
-from tests.direct.conftest import to_hex
 
 STATE_PENDING = 0
 STATE_ELIGIBLE = 1
@@ -12,7 +11,47 @@ STATE_APPROVED = 4
 STATE_REJECTED = 5
 STATE_EXPIRED = 6
 STATE_FINALIZED = 7
-STATE_PAYMENT_FAILED = 8
+MAX_LIFETIME_PROPOSALS = 25
+
+
+def _addr_hex(addr) -> str:
+    if hasattr(addr, "as_hex"):
+        return addr.as_hex
+    from eth_utils import to_checksum_address
+
+    return to_checksum_address("0x" + addr.hex())
+
+
+def test_charter_gate_schema_generation_accepts_public_methods():
+    import json
+    import os
+    import subprocess
+    import sys
+
+    code = """
+import json
+from genvm_linter.validate import validate_contract
+result = validate_contract("contracts/charter_gate.py")
+payload = result.to_dict()
+payload["schema"] = result.schema
+print(json.dumps(payload))
+raise SystemExit(0 if result.ok else 1)
+"""
+    env = dict(os.environ)
+    env["PYTHONIOENCODING"] = "utf-8"
+    completed = subprocess.run(
+        [sys.executable, "-c", code],
+        check=False,
+        capture_output=True,
+        env=env,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr or completed.stdout
+    payload = json.loads(completed.stdout)
+    methods = payload["schema"]["methods"]
+    assert "__on_errored_message__" not in methods
+    assert all(not name.startswith("__") for name in methods)
 
 def _setup_mocks(vm, eligible: bool, rule_results=["rule met"], mismatch=False, fetch_failed=False, malformed=False, custom_llm_raw=None):
     vm.clear_mocks()
@@ -31,9 +70,8 @@ def _setup_mocks(vm, eligible: bool, rule_results=["rule met"], mismatch=False, 
         vm.mock_llm(r".*Evaluate.*", json.dumps(json.dumps({"eligible": eligible, "rule_results": rule_results})))
 
 def test_charter_gate_success_flow(direct_vm, direct_deploy, direct_alice, direct_bob):
-    from eth_utils import to_checksum_address
-    alice_hex = to_checksum_address("0x" + direct_alice.hex())
-    bob_hex = to_checksum_address("0x" + direct_bob.hex())
+    alice_hex = _addr_hex(direct_alice)
+    bob_hex = _addr_hex(direct_bob)
     
     direct_vm.deal(direct_alice, 50000)
     direct_vm.deal(direct_bob, 0)
@@ -76,29 +114,39 @@ def test_charter_gate_success_flow(direct_vm, direct_deploy, direct_alice, direc
     assert contract.get_proposal(pid)["state"] == STATE_FINALIZED
 
 def test_constructor_empty_charter(direct_vm, direct_deploy, direct_alice):
-    from eth_utils import to_checksum_address
-    alice_hex = to_checksum_address("0x" + direct_alice.hex())
+    alice_hex = _addr_hex(direct_alice)
     sunset = int(time.time()) + 10000
     with direct_vm.expect_revert("Charter text cannot be empty"):
         direct_deploy("contracts/charter_gate.py", alice_hex, "", f"{alice_hex}", 1, 1, sunset)
 
+def test_constructor_zero_sponsor_rejected(direct_vm, direct_deploy, direct_alice):
+    alice_hex = _addr_hex(direct_alice)
+    sunset = int(time.time()) + 10000
+    with direct_vm.expect_revert("Zero address sponsor not allowed"):
+        direct_deploy(
+            "contracts/charter_gate.py",
+            "0x0000000000000000000000000000000000000000",
+            "text",
+            f"{alice_hex}",
+            1,
+            1,
+            sunset,
+        )
+
 def test_constructor_duplicate_members(direct_vm, direct_deploy, direct_alice):
-    from eth_utils import to_checksum_address
-    alice_hex = to_checksum_address("0x" + direct_alice.hex())
+    alice_hex = _addr_hex(direct_alice)
     sunset = int(time.time()) + 10000
     with direct_vm.expect_revert("Duplicate member"):
         direct_deploy("contracts/charter_gate.py", alice_hex, "text", f"{alice_hex},{alice_hex}", 1, 1, sunset)
 
 def test_constructor_bad_threshold(direct_vm, direct_deploy, direct_alice):
-    from eth_utils import to_checksum_address
-    alice_hex = to_checksum_address("0x" + direct_alice.hex())
+    alice_hex = _addr_hex(direct_alice)
     sunset = int(time.time()) + 10000
     with direct_vm.expect_revert("Quorum and threshold must be > 0 to require a YES vote"):
         direct_deploy("contracts/charter_gate.py", alice_hex, "text", f"{alice_hex}", 1, 0, sunset)
 
 def test_malformed_llm_and_ineligible(direct_vm, direct_deploy, direct_alice):
-    from eth_utils import to_checksum_address
-    alice_hex = to_checksum_address("0x" + direct_alice.hex())
+    alice_hex = _addr_hex(direct_alice)
     sunset = int(time.time()) + 10000
     contract = direct_deploy("contracts/charter_gate.py", alice_hex, "text", f"{alice_hex}", 1, 1, sunset)
     
@@ -123,10 +171,9 @@ def test_malformed_llm_and_ineligible(direct_vm, direct_deploy, direct_alice):
     contract.screen_proposal(pid2)
     assert contract.get_proposal(pid2)["state"] == STATE_INELIGIBLE
     
-def test_sponsor_recovery_and_liabilities(direct_vm, direct_deploy, direct_alice, direct_bob):
-    from eth_utils import to_checksum_address
-    alice_hex = to_checksum_address("0x" + direct_alice.hex())
-    bob_hex = to_checksum_address("0x" + direct_bob.hex())
+def test_sponsor_recovery_before_sunset_reverts(direct_vm, direct_deploy, direct_alice, direct_bob):
+    alice_hex = _addr_hex(direct_alice)
+    bob_hex = _addr_hex(direct_bob)
     sunset = int(time.time()) + 10000
     
     contract = direct_deploy("contracts/charter_gate.py", alice_hex, "text", f"{alice_hex}", 1, 1, sunset)
@@ -153,8 +200,7 @@ def test_sponsor_recovery_and_liabilities(direct_vm, direct_deploy, direct_alice
     pass
 
 def test_deadline_boundaries(direct_vm, direct_deploy, direct_alice):
-    from eth_utils import to_checksum_address
-    alice_hex = to_checksum_address("0x" + direct_alice.hex())
+    alice_hex = _addr_hex(direct_alice)
     sunset = int(time.time()) + 10000
     contract = direct_deploy("contracts/charter_gate.py", alice_hex, "text", f"{alice_hex}", 1, 1, sunset)
     
@@ -174,10 +220,59 @@ def test_deadline_boundaries(direct_vm, direct_deploy, direct_alice):
     with direct_vm.expect_revert("Vote deadline must be after screen deadline"):
         contract.propose(alice_hex, 10, "Purpose", "https://raw.githubusercontent.com/1", evidence_hash, now+1000, now+500)
 
+def test_lifetime_proposal_cap_rejects_before_state_changes(direct_vm, direct_deploy, direct_alice):
+    alice_hex = _addr_hex(direct_alice)
+    sunset = int(time.time()) + 100000
+    contract = direct_deploy("contracts/charter_gate.py", alice_hex, "text", f"{alice_hex}", 1, 1, sunset)
+
+    direct_vm.deal(direct_alice, 1000)
+    direct_vm.sender = direct_alice
+    direct_vm.value = 1000
+    direct_vm.deal(direct_vm._contract_address, 1000)
+    contract.deposit()
+    direct_vm.value = 0
+
+    evidence_text = "Receipt for team dinner."
+    evidence_hash = hashlib.sha256(evidence_text.encode("utf-8")).hexdigest()
+    now = int(time.time())
+
+    for idx in range(MAX_LIFETIME_PROPOSALS):
+        pid = contract.propose(
+            alice_hex,
+            1,
+            f"Purpose {idx}",
+            f"https://raw.githubusercontent.com/evidence{idx}",
+            evidence_hash,
+            now + 1000 + idx,
+            now + 2000 + idx,
+        )
+        _setup_mocks(direct_vm, False)
+        contract.screen_proposal(pid)
+        assert contract.get_proposal(pid)["state"] == STATE_INELIGIBLE
+        assert contract.active_proposals == 0
+        assert contract.reserved_funds == 0
+
+    assert contract.proposal_count == MAX_LIFETIME_PROPOSALS
+    reserved_before = contract.reserved_funds
+    active_before = contract.active_proposals
+    with direct_vm.expect_revert("Max lifetime proposals reached"):
+        contract.propose(
+            alice_hex,
+            1,
+            "Over cap",
+            "https://raw.githubusercontent.com/evidence-over-cap",
+            evidence_hash,
+            now + 5000,
+            now + 6000,
+        )
+
+    assert contract.proposal_count == MAX_LIFETIME_PROPOSALS
+    assert contract.reserved_funds == reserved_before
+    assert contract.active_proposals == active_before
+
 def test_charter_gate_malformed_llm_output(direct_vm, direct_deploy, direct_alice, direct_bob):
-    from eth_utils import to_checksum_address
-    alice_hex = to_checksum_address("0x" + direct_alice.hex())
-    bob_hex = to_checksum_address("0x" + direct_bob.hex())
+    alice_hex = _addr_hex(direct_alice)
+    bob_hex = _addr_hex(direct_bob)
     
     sunset = int(time.time()) + 100000
     contract = direct_deploy("contracts/charter_gate.py", alice_hex, "Funds can be used for team dinners.", f"{alice_hex},{bob_hex}", 1, 1, sunset)
@@ -225,9 +320,8 @@ def test_charter_gate_malformed_llm_output(direct_vm, direct_deploy, direct_alic
 
 
 def test_release_expired_eligible(direct_vm, direct_deploy, direct_alice, direct_bob):
-    from eth_utils import to_checksum_address
-    alice_hex = to_checksum_address("0x" + direct_alice.hex())
-    bob_hex = to_checksum_address("0x" + direct_bob.hex())
+    alice_hex = _addr_hex(direct_alice)
+    bob_hex = _addr_hex(direct_bob)
 
     contract = direct_deploy("contracts/charter_gate.py", alice_hex, "Funds.", f"{alice_hex},{bob_hex}", 1, 1, int(time.time()) + 10000)
 

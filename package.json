@@ -1,0 +1,15 @@
+{
+  "name": "chartergate",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "schema": "node scripts/verify_chartergate.mjs --schema-only",
+    "deploy": "python scripts/deploy_studio.py"
+  },
+  "devDependencies": {
+    "genlayer-js": "^1.2.0"
+  },
+  "dependencies": {
+    "dotenv": "^18.0.4"
+  }
+}
