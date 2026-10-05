@@ -11,6 +11,7 @@ STATE_APPROVED = 4
 STATE_REJECTED = 5
 STATE_EXPIRED = 6
 STATE_FINALIZED = 7
+MAX_LIFETIME_PROPOSALS = 25
 
 
 def _addr_hex(addr) -> str:
@@ -118,6 +119,20 @@ def test_constructor_empty_charter(direct_vm, direct_deploy, direct_alice):
     with direct_vm.expect_revert("Charter text cannot be empty"):
         direct_deploy("contracts/charter_gate.py", alice_hex, "", f"{alice_hex}", 1, 1, sunset)
 
+def test_constructor_zero_sponsor_rejected(direct_vm, direct_deploy, direct_alice):
+    alice_hex = _addr_hex(direct_alice)
+    sunset = int(time.time()) + 10000
+    with direct_vm.expect_revert("Zero address sponsor not allowed"):
+        direct_deploy(
+            "contracts/charter_gate.py",
+            "0x0000000000000000000000000000000000000000",
+            "text",
+            f"{alice_hex}",
+            1,
+            1,
+            sunset,
+        )
+
 def test_constructor_duplicate_members(direct_vm, direct_deploy, direct_alice):
     alice_hex = _addr_hex(direct_alice)
     sunset = int(time.time()) + 10000
@@ -204,6 +219,56 @@ def test_deadline_boundaries(direct_vm, direct_deploy, direct_alice):
         
     with direct_vm.expect_revert("Vote deadline must be after screen deadline"):
         contract.propose(alice_hex, 10, "Purpose", "https://raw.githubusercontent.com/1", evidence_hash, now+1000, now+500)
+
+def test_lifetime_proposal_cap_rejects_before_state_changes(direct_vm, direct_deploy, direct_alice):
+    alice_hex = _addr_hex(direct_alice)
+    sunset = int(time.time()) + 100000
+    contract = direct_deploy("contracts/charter_gate.py", alice_hex, "text", f"{alice_hex}", 1, 1, sunset)
+
+    direct_vm.deal(direct_alice, 1000)
+    direct_vm.sender = direct_alice
+    direct_vm.value = 1000
+    direct_vm.deal(direct_vm._contract_address, 1000)
+    contract.deposit()
+    direct_vm.value = 0
+
+    evidence_text = "Receipt for team dinner."
+    evidence_hash = hashlib.sha256(evidence_text.encode("utf-8")).hexdigest()
+    now = int(time.time())
+
+    for idx in range(MAX_LIFETIME_PROPOSALS):
+        pid = contract.propose(
+            alice_hex,
+            1,
+            f"Purpose {idx}",
+            f"https://raw.githubusercontent.com/evidence{idx}",
+            evidence_hash,
+            now + 1000 + idx,
+            now + 2000 + idx,
+        )
+        _setup_mocks(direct_vm, False)
+        contract.screen_proposal(pid)
+        assert contract.get_proposal(pid)["state"] == STATE_INELIGIBLE
+        assert contract.active_proposals == 0
+        assert contract.reserved_funds == 0
+
+    assert contract.proposal_count == MAX_LIFETIME_PROPOSALS
+    reserved_before = contract.reserved_funds
+    active_before = contract.active_proposals
+    with direct_vm.expect_revert("Max lifetime proposals reached"):
+        contract.propose(
+            alice_hex,
+            1,
+            "Over cap",
+            "https://raw.githubusercontent.com/evidence-over-cap",
+            evidence_hash,
+            now + 5000,
+            now + 6000,
+        )
+
+    assert contract.proposal_count == MAX_LIFETIME_PROPOSALS
+    assert contract.reserved_funds == reserved_before
+    assert contract.active_proposals == active_before
 
 def test_charter_gate_malformed_llm_output(direct_vm, direct_deploy, direct_alice, direct_bob):
     alice_hex = _addr_hex(direct_alice)

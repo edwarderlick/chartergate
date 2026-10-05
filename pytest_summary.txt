@@ -1,20 +1,8 @@
-============================= test session starts =============================
-platform win32 -- Python 3.12.10, pytest-9.1.1, pluggy-1.6.0 -- D:\CharterGate\.venv312\Scripts\python.exe
-cachedir: .pytest_cache
-rootdir: D:\CharterGate
-configfile: pyproject.toml
-plugins: genlayer-test-0.30.0rc2
-collecting ... collected 10 items
+Command: .venv312\Scripts\python.exe -m pytest tests\direct\test_charter_gate.py -q
+Result: 12 passed in 7.32s
 
-tests/direct/test_charter_gate.py::test_charter_gate_schema_generation_accepts_public_methods PASSED [ 10%]
-tests/direct/test_charter_gate.py::test_charter_gate_success_flow PASSED [ 20%]
-tests/direct/test_charter_gate.py::test_constructor_empty_charter PASSED [ 30%]
-tests/direct/test_charter_gate.py::test_constructor_duplicate_members PASSED [ 40%]
-tests/direct/test_charter_gate.py::test_constructor_bad_threshold PASSED [ 50%]
-tests/direct/test_charter_gate.py::test_malformed_llm_and_ineligible PASSED [ 60%]
-tests/direct/test_charter_gate.py::test_sponsor_recovery_before_sunset_reverts PASSED [ 70%]
-tests/direct/test_charter_gate.py::test_deadline_boundaries PASSED       [ 80%]
-tests/direct/test_charter_gate.py::test_charter_gate_malformed_llm_output PASSED [ 90%]
-tests/direct/test_charter_gate.py::test_release_expired_eligible PASSED  [100%]
-
-============================== 10 passed in 5.09s ==============================
+Additional schema checks:
+- .venv312\Scripts\python.exe -m genvm_linter.cli validate contracts\charter_gate.py
+  Result: Validation passed; Contract: CharterGate; Methods: 9 (2 view, 7 write)
+- node scripts\verify_chartergate.mjs --schema-only
+  Result: original public __on_errored_message__ rejection saved; corrected schema accepted.

@@ -25,6 +25,10 @@ STATE_REJECTED = 5
 STATE_EXPIRED = 6
 STATE_FINALIZED = 7
 
+ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
+MAX_ACTIVE_PROPOSALS = 100
+MAX_LIFETIME_PROPOSALS = 25
+
 
 def _get_now_ts() -> int:
     return int(datetime.datetime.now(datetime.timezone.utc).timestamp())
@@ -72,7 +76,10 @@ class CharterGate(gl.contract.Contract):
             raise ValueError("Charter text too long")
             
         self.charter_text = charter_text
-        self.sponsor = Address(sponsor).as_hex
+        sponsor_hex = Address(sponsor).as_hex
+        if sponsor_hex.lower() == ZERO_ADDRESS:
+            raise ValueError("Zero address sponsor not allowed")
+        self.sponsor = sponsor_hex
 
         unique_members = set()
         members_list = []
@@ -81,7 +88,7 @@ class CharterGate(gl.contract.Contract):
             if m:
                 if len(m) != 42 or not m.startswith("0x"):
                     raise ValueError("Malformed member address")
-                if m == "0x0000000000000000000000000000000000000000":
+                if m.lower() == ZERO_ADDRESS:
                     raise ValueError("Zero address member not allowed")
                 
                 addr_hex = Address(m).as_hex
@@ -165,13 +172,16 @@ class CharterGate(gl.contract.Contract):
         sender = gl.message.sender_address.as_hex
         if not self._is_member(sender):
             raise ValueError("Caller is not a member of the treasury.")
+
+        if self.proposal_count >= u256(MAX_LIFETIME_PROPOSALS):
+            raise ValueError("Max lifetime proposals reached")
             
-        if self.active_proposals >= u256(100):
+        if self.active_proposals >= u256(MAX_ACTIVE_PROPOSALS):
             raise ValueError("Max active proposals reached")
 
         if len(recipient) != 42 or not recipient.startswith("0x"):
             raise ValueError("Malformed recipient address")
-        if recipient == "0x0000000000000000000000000000000000000000":
+        if recipient.lower() == ZERO_ADDRESS:
             raise ValueError("Zero address recipient not allowed")
             
         if not purpose.strip():

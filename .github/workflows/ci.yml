@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, steward-schema-fix]
   pull_request:
     branches: [main]
 
@@ -16,7 +16,8 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -r requirements.txt
-      - run: genvm-lint check contracts/football_bets.py
+      - run: genvm-lint check contracts/charter_gate.py
+      - run: genvm-lint validate contracts/charter_gate.py
 
   test-direct:
     name: Direct Mode Tests
@@ -27,4 +28,4 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -r requirements.txt
-      - run: pytest tests/direct/ -v
+      - run: pytest tests/direct/test_charter_gate.py -v

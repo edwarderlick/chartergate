@@ -1,10 +1,18 @@
 networks:
-  default: localnet
+  default: studio-dev
 
   localnet:
     url: "http://127.0.0.1:4000/api"
 
-  studionet: {}
+  studionet:
+    url: "https://studio.genlayer.com/api"
+
+  studio-dev:
+    url: "https://studio-dev.genlayer.com/api"
+    id: 61997
+    chain_type: studio_devnet
+    accounts:
+      - "$PRIVATE_KEY"
 
 paths:
   contracts: "contracts"

@@ -16,10 +16,6 @@ __pycache__/
 *.pyo
 *.pyd
 /context
-/frontend/.next
-/frontend/next-env.d.ts
-/frontend/bun.lock
-/frontend/package-lock.json
 *.compiled.js
 package-lock.json
 
