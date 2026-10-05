@@ -24,7 +24,10 @@ STATE_APPROVED = 4
 STATE_REJECTED = 5
 STATE_EXPIRED = 6
 STATE_FINALIZED = 7
-STATE_PAYMENT_FAILED = 8
+
+ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
+MAX_ACTIVE_PROPOSALS = 100
+MAX_LIFETIME_PROPOSALS = 25
 
 
 def _get_now_ts() -> int:
@@ -64,7 +67,6 @@ class CharterGate(gl.contract.Contract):
     
     total_funded: u256
     reserved_funds: u256
-    payment_liabilities_json: str
 
     def __init__(self, sponsor: str, charter_text: str, members: str, quorum: u256, threshold: u256, sunset_time: u256):
         self.debug_error = "None"
@@ -74,7 +76,10 @@ class CharterGate(gl.contract.Contract):
             raise ValueError("Charter text too long")
             
         self.charter_text = charter_text
-        self.sponsor = Address(sponsor).as_hex
+        sponsor_hex = Address(sponsor).as_hex
+        if sponsor_hex.lower() == ZERO_ADDRESS:
+            raise ValueError("Zero address sponsor not allowed")
+        self.sponsor = sponsor_hex
 
         unique_members = set()
         members_list = []
@@ -83,7 +88,7 @@ class CharterGate(gl.contract.Contract):
             if m:
                 if len(m) != 42 or not m.startswith("0x"):
                     raise ValueError("Malformed member address")
-                if m == "0x0000000000000000000000000000000000000000":
+                if m.lower() == ZERO_ADDRESS:
                     raise ValueError("Zero address member not allowed")
                 
                 addr_hex = Address(m).as_hex
@@ -130,7 +135,6 @@ class CharterGate(gl.contract.Contract):
         self.members_json = json.dumps(members_list)
         self.proposals_json = "{}"
         self.has_voted_json = "{}"
-        self.payment_liabilities_json = "{}"
 
     @gl.public.view
     def get_error(self) -> str:
@@ -168,13 +172,16 @@ class CharterGate(gl.contract.Contract):
         sender = gl.message.sender_address.as_hex
         if not self._is_member(sender):
             raise ValueError("Caller is not a member of the treasury.")
+
+        if self.proposal_count >= u256(MAX_LIFETIME_PROPOSALS):
+            raise ValueError("Max lifetime proposals reached")
             
-        if self.active_proposals >= u256(100):
+        if self.active_proposals >= u256(MAX_ACTIVE_PROPOSALS):
             raise ValueError("Max active proposals reached")
 
         if len(recipient) != 42 or not recipient.startswith("0x"):
             raise ValueError("Malformed recipient address")
-        if recipient == "0x0000000000000000000000000000000000000000":
+        if recipient.lower() == ZERO_ADDRESS:
             raise ValueError("Zero address recipient not allowed")
             
         if not purpose.strip():
@@ -433,24 +440,6 @@ or
         else:
             raise ValueError(f"Proposal is not expired in a reservable state (state={p.state}, now={now}, ds={p.deadline_screen}, dv={p.deadline_vote})")
             
-    @gl.public.write.payable
-    def __on_errored_message__(self) -> None:
-        failed_value = int(gl.message.value)
-        if failed_value <= 0:
-            return
-            
-        self.reserved_funds += u256(failed_value)
-        
-        sender = gl.message.sender_address.as_hex
-        
-        liabilities_dict = json.loads(self.payment_liabilities_json)
-        if sender not in liabilities_dict:
-            liabilities_dict[sender] = failed_value
-        else:
-            liabilities_dict[sender] += failed_value
-            
-        self.payment_liabilities_json = json.dumps(liabilities_dict)
-
     @gl.public.write
     def withdraw_treasury(self, amount: int) -> None:
         sender = gl.message.sender_address.as_hex
@@ -469,21 +458,6 @@ or
             raise ValueError("Insufficient balance (accounting for reserved funds)")
             
         _PayoutTarget(Address(sender)).emit_transfer(value=amount_u256)
-
-    @gl.public.write
-    def withdraw_failed_payment(self) -> None:
-        sender = gl.message.sender_address.as_hex
-        liabilities_dict = json.loads(self.payment_liabilities_json)
-        
-        amount = liabilities_dict.get(sender, 0)
-        if amount <= 0:
-            raise ValueError("No failed payments to withdraw")
-            
-        liabilities_dict[sender] = 0
-        self.payment_liabilities_json = json.dumps(liabilities_dict)
-        
-        self.reserved_funds -= u256(amount)
-        _PayoutTarget(Address(sender)).emit_transfer(value=u256(amount))
 
     @gl.public.view
     def get_proposal(self, pid: u256) -> dict:
