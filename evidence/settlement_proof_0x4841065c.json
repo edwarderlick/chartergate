@@ -1,0 +1,189 @@
+{
+  "target_contract": "0x4841065CC06A4a1A4f5f418867EE8A5c9451dDC1",
+  "operator": "0xBb4e0fD1CEaC9F8db17242CF86decDcdd45FA48a",
+  "recipient_eoa": "0xD085ad7f55050279162B1a3dc8AD04503b330c86",
+  "network": "studio-dev",
+  "chain_id": 61997,
+  "lifecycle_summary": {
+    "proposal_id": 0,
+    "payout_amount_wei": 100,
+    "deposited_funds_wei": 500,
+    "initial_contract_balance_wei": 0,
+    "initial_recipient_balance_wei": 0,
+    "contract_balance_before_claim_wei": 500,
+    "recipient_balance_before_claim_wei": 0,
+    "contract_balance_after_claim_wei": 400,
+    "recipient_balance_after_claim_wei": 100,
+    "contract_balance_delta_wei": -100,
+    "recipient_balance_delta_wei": 100,
+    "proposal_state_before_claim": "STATE_APPROVED (4)",
+    "payout_state_before_claim": "PAYOUT_APPROVED (1)",
+    "is_liability_before_claim": true,
+    "proposal_state_after_claim": "STATE_FINALIZED (7)",
+    "payout_state_after_claim": "PAYOUT_DELIVERED (2)",
+    "is_liability_after_claim": false,
+    "duplicate_claim_attempt_result": "FINISHED_WITH_ERROR (Reverted)",
+    "retry_payout_attempt_result": "FINISHED_WITH_ERROR (Reverted)",
+    "final_contract_balance_wei": 400,
+    "final_recipient_balance_wei": 100
+  },
+  "transactions": {
+    "deposit": {
+      "tx_hash": "0xb3b53122faf4e3ced884e4258c2b3819c8aca2c18c9d6cfe9bff5d982fb3ddf4",
+      "status": "FINALIZED",
+      "execution_result": "FINISHED_WITH_RETURN",
+      "messages": [],
+      "pending_transactions": [],
+      "votes": {
+        "0x05d8aFc66B515038712537f99cAAEA73d16f0007": "idle",
+        "0x5cDf4BdDeEDa0e32ED596b94f69AcC0FbB57f264": "agree",
+        "0x8D32eb5D0207f7E230C45e7BF0D14B2ED5DA3028": "idle",
+        "0xa0435f618c1F27B254998018AEa8Da5C77187852": "agree",
+        "0xcbC79F96B7A275b23EE64d80a98325107F6E1b77": "agree"
+      },
+      "created_timestamp": "1791795735",
+      "last_vote_timestamp": "1791795739",
+      "timestamp_awaiting_finalization": 1791795739
+    },
+    "propose": {
+      "tx_hash": "0x84afebe2bef38ad938e59bd1d51c03137ad8ac188336fdf38ce28adaaff7329e",
+      "status": "FINALIZED",
+      "execution_result": "FINISHED_WITH_RETURN",
+      "messages": [],
+      "pending_transactions": [],
+      "votes": {
+        "0x8142E5D1b04f84c3cD995C25AAe31B31F8e0379E": "agree",
+        "0xA793D9dc0ED9edC1f9F732bB68b5D3AFA934F52D": "idle",
+        "0xE52dDB85587585930b1E5f1Fe88fef21CcA49829": "agree",
+        "0xa0435f618c1F27B254998018AEa8Da5C77187852": "idle",
+        "0xcEf1Baa172d0b4D99Dcc505B36332F26D1088025": "agree"
+      },
+      "created_timestamp": "1791795756",
+      "last_vote_timestamp": "1791795761",
+      "timestamp_awaiting_finalization": 1791795761
+    },
+    "screen": {
+      "tx_hash": "0x3fe9bd737b0774760208f43f5061da0866e2c8cd760b6916a13f8c37061aeecd",
+      "status": "FINALIZED",
+      "execution_result": "FINISHED_WITH_RETURN",
+      "messages": [],
+      "pending_transactions": [],
+      "votes": {
+        "0x6760cDeC573cf38568C59872ee48B6fED41F8A4c": "agree",
+        "0x8D32eb5D0207f7E230C45e7BF0D14B2ED5DA3028": "disagree",
+        "0xa0435f618c1F27B254998018AEa8Da5C77187852": "agree",
+        "0xcEf1Baa172d0b4D99Dcc505B36332F26D1088025": "disagree",
+        "0xcbC79F96B7A275b23EE64d80a98325107F6E1b77": "agree"
+      },
+      "created_timestamp": "1791795778",
+      "last_vote_timestamp": "1791795810",
+      "timestamp_awaiting_finalization": 1791795810
+    },
+    "vote": {
+      "tx_hash": "0xfbe57f7a5d33ecaba3fce3a450c3dc7b6c4bb4ea58127e6bfb20004e6b4cc936",
+      "status": "FINALIZED",
+      "execution_result": "FINISHED_WITH_RETURN",
+      "messages": [],
+      "pending_transactions": [],
+      "votes": {
+        "0x05d8aFc66B515038712537f99cAAEA73d16f0007": "idle",
+        "0x1dA3a7de8EA65A318bf88Eb63d3dC55295Dd257E": "agree",
+        "0xE4E106086F167D75E2270fa5f3680f6ac598d179": "idle",
+        "0xa0435f618c1F27B254998018AEa8Da5C77187852": "agree",
+        "0xcEf1Baa172d0b4D99Dcc505B36332F26D1088025": "agree"
+      },
+      "created_timestamp": "1791795829",
+      "last_vote_timestamp": "1791795833",
+      "timestamp_awaiting_finalization": 1791795833
+    },
+    "finalize": {
+      "tx_hash": "0x69bc59afa7074c2b25c545ada633c92cd6dcf64e72f9456de961265e3b667a3e",
+      "status": "FINALIZED",
+      "execution_result": "FINISHED_WITH_RETURN",
+      "messages": [],
+      "pending_transactions": [],
+      "votes": {
+        "0x05d8aFc66B515038712537f99cAAEA73d16f0007": "idle",
+        "0x6760cDeC573cf38568C59872ee48B6fED41F8A4c": "agree",
+        "0xE52dDB85587585930b1E5f1Fe88fef21CcA49829": "idle",
+        "0xcEf1Baa172d0b4D99Dcc505B36332F26D1088025": "agree",
+        "0xcF5Fd792Df0Dc9d297af75c82B4A0011e8FA1A4A": "agree"
+      },
+      "created_timestamp": "1791795845",
+      "last_vote_timestamp": "1791795850",
+      "timestamp_awaiting_finalization": 1791795850
+    },
+    "claim_payout": {
+      "tx_hash": "0xb02d6e8104779568b37346730dd62cf2e4606fe0c9a4766c8f5c7edc5e2d6ff0",
+      "status": "FINALIZED",
+      "execution_result": "FINISHED_WITH_RETURN",
+      "messages": [
+        {
+          "messageType": "0",
+          "recipient": "0xD085ad7f55050279162B1a3dc8AD04503b330c86",
+          "value": 100,
+          "data": "",
+          "onAcceptance": false
+        }
+      ],
+      "pending_transactions": [
+        {
+          "on": "finalized",
+          "value": 100,
+          "address": "0xD085ad7f55050279162B1a3dc8AD04503b330c86",
+          "call_key": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "gas_used": 0,
+          "fee_params": "AAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+          "is_eth_send": true,
+          "use_balance": false,
+          "declared_budget": 0,
+          "allocation_subtree": []
+        }
+      ],
+      "votes": {
+        "0x6760cDeC573cf38568C59872ee48B6fED41F8A4c": "agree",
+        "0xa0435f618c1F27B254998018AEa8Da5C77187852": "agree",
+        "0xcEf1Baa172d0b4D99Dcc505B36332F26D1088025": "agree",
+        "0xcF5Fd792Df0Dc9d297af75c82B4A0011e8FA1A4A": "idle",
+        "0xcbC79F96B7A275b23EE64d80a98325107F6E1b77": "agree"
+      },
+      "created_timestamp": "1791795871",
+      "last_vote_timestamp": "1791795874",
+      "timestamp_awaiting_finalization": 1791795874
+    },
+    "duplicate_claim": {
+      "tx_hash": "0x618d2957b9e42e7712290edeb06560069029f53d4b28d07210220b8f9d60278e",
+      "status": "FINALIZED",
+      "execution_result": "FINISHED_WITH_ERROR",
+      "messages": [],
+      "pending_transactions": [],
+      "votes": {
+        "0x05d8aFc66B515038712537f99cAAEA73d16f0007": "agree",
+        "0x8142E5D1b04f84c3cD995C25AAe31B31F8e0379E": "idle",
+        "0xEEcEC5D1E07Ee40f5cb85aF922178Dc01278013C": "agree",
+        "0xcEf1Baa172d0b4D99Dcc505B36332F26D1088025": "agree",
+        "0xcbC79F96B7A275b23EE64d80a98325107F6E1b77": "idle"
+      },
+      "created_timestamp": "1791795997",
+      "last_vote_timestamp": "1791796000",
+      "timestamp_awaiting_finalization": 1791796000
+    },
+    "duplicate_retry": {
+      "tx_hash": "0x6c35fe1c53315c073305f196c002a035553efdbb2cded6361e2614df6a36e25d",
+      "status": "FINALIZED",
+      "execution_result": "FINISHED_WITH_ERROR",
+      "messages": [],
+      "pending_transactions": [],
+      "votes": {
+        "0x05d8aFc66B515038712537f99cAAEA73d16f0007": "idle",
+        "0x5cDf4BdDeEDa0e32ED596b94f69AcC0FbB57f264": "agree",
+        "0xE52dDB85587585930b1E5f1Fe88fef21CcA49829": "agree",
+        "0xa0435f618c1F27B254998018AEa8Da5C77187852": "agree",
+        "0xcF5Fd792Df0Dc9d297af75c82B4A0011e8FA1A4A": "idle"
+      },
+      "created_timestamp": "1791796011",
+      "last_vote_timestamp": "1791796017",
+      "timestamp_awaiting_finalization": 1791796017
+    }
+  }
+}

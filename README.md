@@ -43,13 +43,23 @@ CharterGate is only possible due to GenLayer's unique Intelligent Contract capab
 - **CPython**: `cpython:3t4hs1eyrs8rb0qf538cbc227jskqeke9pfys0vaftapv91xn9v0`
 - **Protocol Settlement Guarantee**:
   - In GenLayer, sending value to an EOA is an **external message** (`is_eth_send: true`, `messageType: 0` in `IMessages.MessageType.External`).
-  - As defined in official documentation (`messages.md` and `value-transfers.md`), external messages to EOAs always execute on transaction finalization.
-  - An EOA has no smart contract bytecode, no fallback handler, cannot revert, cannot reject transfers, and cannot run out of gas during recipient execution.
-  - During GenVM execution, balance is checked (`self.balance >= value`). If insufficient, GenVM aborts and the transaction reverts cleanly.
-  - Upon consensus finalization (commit, reveal, appeal window close), the consensus state transition credits the recipient account balance directly and permanently on the ledger.
-  - **Live Network Evidence**:
-    - Live transaction `0xe4a763d664837ae9e56208ea93dd5d1771c4dca39afeab45319b44cb3e906f5d` on `studio-dev` (chain ID 61997) emitted an external transfer of 100 wei to recipient `0x81b637d8fCD2C6da6359E6963113a1170de795E4`.
-    - Verification via studio-dev RPC (`eth_getBalance`) confirmed the recipient's balance was credited upon transaction finalization (observable balance increased to `0xc8` / 200 wei across both transfers).
+  - As defined in protocol specifications and consensus accounting (`genlayer_py/transactions/fees.py:170`), external value transfers emit with `call_key: 0x0...0` and `on: "finalized"`.
+  - An EOA has no smart contract bytecode, no fallback handler, cannot revert, cannot reject transfers, and cannot run out of gas during recipient handling.
+  - During GenVM execution, balance sufficiency is strictly validated (`self.balance >= value`). If underfunded, GenVM aborts and the transaction reverts cleanly.
+  - Upon consensus finalization (commit, reveal, appeal window close), the consensus state transition executes `pending_transactions` where `on == "finalized"`, permanently and directly crediting the recipient account balance on the ledger.
+  - **Live Proof on Deployment `0x4841065CC06A4a1A4f5f418867EE8A5c9451dDC1`**:
+    - Conducted full live lifecycle test on Proposal 0 with fresh recipient EOA `0xD085ad7f55050279162B1a3dc8AD04503b330c86` (initial balance: 0 wei).
+    - Deposited 500 wei into CharterGate (TX `0xb3b53122faf4e3ced884e4258c2b3819c8aca2c18c9d6cfe9bff5d982fb3ddf4`).
+    - Proposal 0 created for 100 wei (TX `0x84afebe2bef38ad938e59bd1d51c03137ad8ac188336fdf38ce28adaaff7329e`).
+    - AI evidence screening approved with SUCCESS (TX `0x3fe9bd737b0774760208f43f5061da0866e2c8cd760b6916a13f8c37061aeecd`).
+    - Member voted YES (TX `0xfbe57f7a5d33ecaba3fce3a450c3dc7b6c4bb4ea58127e6bfb20004e6b4cc936`).
+    - Finalize approved proposal as protected liability: `STATE_APPROVED` (4), `PAYOUT_APPROVED` (1), `is_liability: true` (TX `0x69bc59afa7074c2b25c545ada633c92cd6dcf64e72f9456de961265e3b667a3e`).
+    - Claim payout executed (TX `0xb02d6e8104779568b37346730dd62cf2e4606fe0c9a4766c8f5c7edc5e2d6ff0`).
+    - Upon finalization, recipient balance increased from **0 wei to 100 wei**, and CharterGate balance decreased from **500 wei to 400 wei**.
+    - Proposal transitioned to `STATE_FINALIZED` (7), `PAYOUT_DELIVERED` (2), `is_liability: false`.
+    - Duplicate claim attempt reverted with `FINISHED_WITH_ERROR` (TX `0x618d2957b9e42e7712290edeb06560069029f53d4b28d07210220b8f9d60278e`), keeping recipient balance at 100 wei.
+    - Retry payout attempt reverted with `FINISHED_WITH_ERROR` (TX `0x6c35fe1c53315c073305f196c002a035553efdbb2cded6361e2614df6a36e25d`), preventing any double-spending.
+    - Full sanitized evidence recorded in [`settlement_proof_0x4841065c.json`](evidence/settlement_proof_0x4841065c.json).
 - **Design Around the Guarantee**:
   - Because external value transfers to EOAs have protocol-guaranteed settlement upon finalization, post-emission delivery failure is impossible.
   - Unreachable retry states (`PAYOUT_PENDING` limbo, `PAYOUT_FAILED`, unverified `report_failed_delivery` and `confirm_delivery`) have been completely removed.
@@ -61,6 +71,7 @@ CharterGate is only possible due to GenLayer's unique Intelligent Contract capab
 - **Deploy Transaction**: `0x75ee6da56dc7933fd104b09fed1763822e1a04fb54ccaa2cf7ea4c16c4ec1015`
 - **Source Code**: [charter_gate.py](contracts/charter_gate.py)
 - **Deployment Receipt**: [receipt.json](deploy/receipt.json)
+- **Live Settlement Proof on Deployment**: [settlement_proof_0x4841065c.json](evidence/settlement_proof_0x4841065c.json)
 - **Schema Validation Evidence**: [chartergate_validation.json](deploy/chartergate_validation.json)
 - **Source Hash Evidence**: [deployment_verification.txt](deployment_verification.txt)
   - Deployed Code SHA-256: `a4d8748418c9b9165cc8a135111006444a87dc54c85b29790ddff13aafc82930`
@@ -71,3 +82,4 @@ CharterGate is only possible due to GenLayer's unique Intelligent Contract capab
 - **Superseded Deployments (Do Not Use)**:
   - `0x71D888072B123C61E553d82a3ffbAceD8B690410`: Rejected (no payout liability retention after finalize).
   - `0x7F58edF6431aE89251Ef4DB555DD817743FaA7E0`: Rejected (unverified caller assertions allow duplicate payment and liability erasure).
+
