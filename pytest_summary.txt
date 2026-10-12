@@ -1,8 +1,32 @@
-Command: .venv312\Scripts\python.exe -m pytest tests\direct\test_charter_gate.py -q
-Result: 12 passed in 7.32s
+============================= test session starts =============================
+platform win32 -- Python 3.12.10, pytest-9.1.1, pluggy-1.6.0 -- D:\CharterGate\venv\Scripts\python.exe
+cachedir: .pytest_cache
+rootdir: D:\CharterGate
+configfile: pyproject.toml
+plugins: genlayer-test-0.30.0rc2
+collecting ... collected 22 items
 
-Additional schema checks:
-- .venv312\Scripts\python.exe -m genvm_linter.cli validate contracts\charter_gate.py
-  Result: Validation passed; Contract: CharterGate; Methods: 9 (2 view, 7 write)
-- node scripts\verify_chartergate.mjs --schema-only
-  Result: original public __on_errored_message__ rejection saved; corrected schema accepted.
+tests/direct/test_charter_gate.py::test_charter_gate_schema_generation_accepts_public_methods PASSED [  4%]
+tests/direct/test_charter_gate.py::test_charter_gate_success_flow PASSED [  9%]
+tests/direct/test_charter_gate.py::test_constructor_empty_charter PASSED [ 13%]
+tests/direct/test_charter_gate.py::test_constructor_zero_sponsor_rejected PASSED [ 18%]
+tests/direct/test_charter_gate.py::test_constructor_duplicate_members PASSED [ 22%]
+tests/direct/test_charter_gate.py::test_constructor_bad_threshold PASSED [ 27%]
+tests/direct/test_charter_gate.py::test_malformed_llm_and_ineligible PASSED [ 31%]
+tests/direct/test_charter_gate.py::test_sponsor_recovery_before_sunset_reverts PASSED [ 36%]
+tests/direct/test_charter_gate.py::test_deadline_boundaries PASSED       [ 40%]
+tests/direct/test_charter_gate.py::test_lifetime_proposal_cap_rejects_before_state_changes PASSED [ 45%]
+tests/direct/test_charter_gate.py::test_charter_gate_malformed_llm_output PASSED [ 50%]
+tests/direct/test_charter_gate.py::test_release_expired_eligible PASSED  [ 54%]
+tests/direct/test_charter_gate.py::test_payout_approval_preserves_reserved_funds_liability PASSED [ 59%]
+tests/direct/test_charter_gate.py::test_payout_pending_delivery PASSED   [ 63%]
+tests/direct/test_charter_gate.py::test_payout_duplicate_attempts_revert PASSED [ 68%]
+tests/direct/test_charter_gate.py::test_payout_failed_delivery_recovery_and_retry PASSED [ 72%]
+tests/direct/test_charter_gate.py::test_payout_sponsor_withdrawal_protection_against_liabilities PASSED [ 77%]
+tests/direct/test_charter_gate.py::test_attack_false_failure_causes_duplicate_payment PASSED [ 81%]
+tests/direct/test_charter_gate.py::test_attack_false_delivery_confirmation_releases_unpaid_liability PASSED [ 86%]
+tests/direct/test_charter_gate.py::test_genuine_failure_and_safe_retry PASSED [ 90%]
+tests/direct/test_charter_gate.py::test_multiple_outstanding_liabilities PASSED [ 95%]
+tests/direct/test_charter_gate.py::test_sunset_withdrawal_respects_unresolved_liabilities PASSED [100%]
+
+============================= 22 passed in 4.02s ==============================

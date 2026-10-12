@@ -1,0 +1,85 @@
+{
+  "contract_address": "0x7F58edF6431aE89251Ef4DB555DD817743FaA7E0",
+  "operator": "0xBb4e0fD1CEaC9F8db17242CF86decDcdd45FA48a",
+  "steps": [
+    {
+      "step": "deposit",
+      "tx_hash": "0xee15d5b08ebd8b2afd0dd437f374fc433a9a07076aa6d51a8be5eedb115f501a",
+      "status": "ACCEPTED",
+      "deposited_wei": 5000
+    },
+    {
+      "step": "propose",
+      "pid": 0,
+      "tx_hash": "0x6994c0489c77087a013b8c560b1962012b9e8e7655653df3c23a2a08b33aef4f",
+      "recipient": "0x81b637d8fCD2C6da6359E6963113a1170de795e4",
+      "amount": 100,
+      "state": "STATE_PENDING"
+    },
+    {
+      "step": "screen_proposal",
+      "pid": 0,
+      "tx_hash": "0x622a573baa20dd6e4a1677e62daf89a852a65901348b261ee8078a9fd3898479",
+      "state": "STATE_ELIGIBLE",
+      "eligibility_details": "SUCCESS"
+    },
+    {
+      "step": "vote",
+      "pid": 0,
+      "tx_hash": "0x72fef4deb148a359aaaddba65e8f8a27b8539125dc6ed097b45fedc66cff8e5f",
+      "yes_votes": 1
+    },
+    {
+      "step": "finalize_approval",
+      "pid": 0,
+      "tx_hash": "0x4ccf04c089a0a78bdacc63718dc900d9084057a5094e09170bb6d8b88a55696b",
+      "state": "STATE_APPROVED",
+      "payout_state": "PAYOUT_APPROVED",
+      "is_liability": true
+    },
+    {
+      "step": "claim_payout_pending",
+      "pid": 0,
+      "tx_hash": "0xe4a763d664837ae9e56208ea93dd5d1771c4dca39afeab45319b44cb3e906f5d",
+      "state": "STATE_APPROVED",
+      "payout_state": "PAYOUT_PENDING",
+      "is_liability": true
+    },
+    {
+      "step": "duplicate_claim_prevention",
+      "pid": 0,
+      "tx_hash": "0xce8cc9fbd6033891848b4009d3d81a6e9ed35ceb81caf8333a4efcd7ba316855",
+      "reverted_as_expected": true
+    },
+    {
+      "step": "report_failed_delivery",
+      "pid": 0,
+      "tx_hash": "0x0a8673267bf5df4323be39da72ec1c57d2e10412cf5f19b4b50b04fd9afad0df",
+      "state": "STATE_APPROVED",
+      "payout_state": "PAYOUT_FAILED",
+      "is_liability": true
+    },
+    {
+      "step": "retry_payout",
+      "pid": 0,
+      "tx_hash": "0x247a732da6a6f6062c675ea176e9885a19327147070a2b1b62d601247fc7112c",
+      "state": "STATE_APPROVED",
+      "payout_state": "PAYOUT_PENDING",
+      "is_liability": true
+    },
+    {
+      "step": "confirm_delivery",
+      "pid": 0,
+      "tx_hash": "0x4d9b3e7f5fd56d8db3df35fa432762591c2e22b170acf333e6dfacd6201b11a0",
+      "state": "STATE_FINALIZED",
+      "payout_state": "PAYOUT_DELIVERED",
+      "is_liability": false
+    },
+    {
+      "step": "post_delivery_claim_prevention",
+      "pid": 0,
+      "tx_hash": "0x4f34d0397a8f65580e027fa8096252745b7524d5ad697b169ac633b134afa1ea",
+      "reverted_as_expected": true
+    }
+  ]
+}

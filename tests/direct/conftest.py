@@ -1,5 +1,7 @@
 import os
 
+os.environ.setdefault("GENVM_VERSION", "v0.6.0-rc8")
+
 original_unlink = os.unlink
 
 def safe_unlink(path, *args, **kwargs):
