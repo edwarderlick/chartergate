@@ -1,14 +1,30 @@
+import os
 import json
 import requests
 from pathlib import Path
+from dotenv import load_dotenv
+
+from eth_account import Account
+from gltest_cli.config.user import load_user_config
+from gltest_cli.config.general import get_general_config
+from gltest import get_contract_factory
 
 RPC_URL = "https://studio-dev.genlayer.com/api"
 
 def rpc_call(method, params):
-    r = requests.post(RPC_URL, json={"jsonrpc": "2.0", "id": 1, "method": method, "params": params})
-    return r.json()
+    req_body = {"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
+    res = requests.post(RPC_URL, json=req_body)
+    return {
+        "request": req_body,
+        "response": res.json()
+    }
 
 def main():
+    load_dotenv()
+    key = os.environ.get("PRIVATE_KEY")
+    if not key:
+        raise ValueError("PRIVATE_KEY not set")
+
     contract_address = "0x4841065CC06A4a1A4f5f418867EE8A5c9451dDC1"
     recipient_address = "0xD085ad7f55050279162B1a3dc8AD04503b330c86"
     operator_address = "0xBb4e0fD1CEaC9F8db17242CF86decDcdd45FA48a"
@@ -24,16 +40,23 @@ def main():
         "duplicate_retry": "0x6c35fe1c53315c073305f196c002a035553efdbb2cded6361e2614df6a36e25d",
     }
 
-    print("Fetching raw RPC transaction records...")
-    tx_records = {}
+    print("Fetching raw RPC transaction records from studio-dev...")
+    raw_rpc_records = {}
+    parsed_transactions = {}
+
     for name, h in tx_hashes.items():
-        res = rpc_call("eth_getTransactionByHash", [h]).get("result", {})
+        rpc_data = rpc_call("eth_getTransactionByHash", [h])
+        raw_rpc_records[name] = rpc_data
+        
+        res = rpc_data["response"].get("result", {})
         leader_receipts = res.get("consensus_data", {}).get("leader_receipt", [])
         pending_txs = []
         if leader_receipts and len(leader_receipts) > 0:
-            pending_txs = leader_receipts[0].get("pending_transactions", [])
-        
-        tx_records[name] = {
+            pending_txs = leader_receipts[0].get("genvm_result", {}).get("pending_transactions", [])
+            if not pending_txs:
+                pending_txs = leader_receipts[0].get("pending_transactions", [])
+
+        parsed_transactions[name] = {
             "tx_hash": h,
             "status": res.get("status"),
             "execution_result": res.get("txExecutionResultName"),
@@ -45,39 +68,63 @@ def main():
             "timestamp_awaiting_finalization": res.get("timestamp_awaiting_finalization")
         }
 
-    recip_bal = int(rpc_call("eth_getBalance", [recipient_address, "latest"]).get("result", "0x0"), 16)
-    contract_bal = int(rpc_call("eth_getBalance", [contract_address, "latest"]).get("result", "0x0"), 16)
+    # Fetch live balances via raw RPC
+    bal_contract_call = rpc_call("eth_getBalance", [contract_address, "latest"])
+    bal_recip_call = rpc_call("eth_getBalance", [recipient_address, "latest"])
+    
+    contract_bal_now = int(bal_contract_call["response"].get("result", "0x0"), 16)
+    recip_bal_now = int(bal_recip_call["response"].get("result", "0x0"), 16)
 
+    # Fetch proposal state from contract
+    general_config = get_general_config()
+    user_config = load_user_config(Path("gltest.config.yaml"))
+    if user_config.networks.get("studio-dev"):
+        user_config.networks["studio-dev"].accounts = [key]
+        user_config.networks["studio-dev"].from_account = key
+    general_config.user_config = user_config
+
+    factory = get_contract_factory("CharterGate")
+    contract = factory.build_contract(contract_address, account=Account.from_key(key))
+    p0 = contract.get_proposal([0]).call()
+    payout0 = contract.get_payout([0]).call()
+
+    # Derive lifecycle metrics strictly from verified records:
+    claim_tx = parsed_transactions["claim_payout"]
+    claim_pending = claim_tx["pending_transactions"]
+    payout_val = claim_pending[0]["value"] if claim_pending else p0["amount"]
+    
+    # Structure sanitized evidence report
     evidence = {
-        "target_contract": contract_address,
-        "operator": operator_address,
-        "recipient_eoa": recipient_address,
         "network": "studio-dev",
         "chain_id": 61997,
-        "lifecycle_summary": {
+        "contract_address": contract_address,
+        "operator_address": operator_address,
+        "recipient_address": recipient_address,
+        "verified_onchain_summary": {
             "proposal_id": 0,
-            "payout_amount_wei": 100,
-            "deposited_funds_wei": 500,
-            "initial_contract_balance_wei": 0,
-            "initial_recipient_balance_wei": 0,
-            "contract_balance_before_claim_wei": 500,
-            "recipient_balance_before_claim_wei": 0,
-            "contract_balance_after_claim_wei": 400,
-            "recipient_balance_after_claim_wei": 100,
-            "contract_balance_delta_wei": -100,
-            "recipient_balance_delta_wei": 100,
-            "proposal_state_before_claim": "STATE_APPROVED (4)",
-            "payout_state_before_claim": "PAYOUT_APPROVED (1)",
-            "is_liability_before_claim": True,
-            "proposal_state_after_claim": "STATE_FINALIZED (7)",
-            "payout_state_after_claim": "PAYOUT_DELIVERED (2)",
-            "is_liability_after_claim": False,
-            "duplicate_claim_attempt_result": "FINISHED_WITH_ERROR (Reverted)",
-            "retry_payout_attempt_result": "FINISHED_WITH_ERROR (Reverted)",
-            "final_contract_balance_wei": contract_bal,
-            "final_recipient_balance_wei": recip_bal
+            "payout_amount_wei": payout_val,
+            "current_contract_balance_wei": contract_bal_now,
+            "current_recipient_balance_wei": recip_bal_now,
+            "claim_payout_tx_hash": tx_hashes["claim_payout"],
+            "claim_payout_status": claim_tx["status"],
+            "claim_payout_execution_result": claim_tx["execution_result"],
+            "emitted_messages_count": len(claim_tx["messages"]),
+            "pending_transactions_count": len(claim_tx["pending_transactions"]),
+            "pending_transaction_details": claim_pending,
+            "final_proposal_state": p0["state"],
+            "final_payout_state": p0["payout_state"],
+            "is_liability_remaining": payout0["is_liability"],
+            "duplicate_claim_execution_result": parsed_transactions["duplicate_claim"]["execution_result"],
+            "duplicate_retry_execution_result": parsed_transactions["duplicate_retry"]["execution_result"]
         },
-        "transactions": tx_records
+        "parsed_transactions": parsed_transactions,
+        "raw_rpc_captures": {
+            "transactions": raw_rpc_records,
+            "balances": {
+                "contract_balance": bal_contract_call,
+                "recipient_balance": bal_recip_call
+            }
+        }
     }
 
     out_path = Path("evidence/settlement_proof_0x4841065c.json")
@@ -85,7 +132,7 @@ def main():
     with open(out_path, "w") as f:
         json.dump(evidence, f, indent=2)
 
-    print(f"Evidence report successfully generated at: {out_path}")
+    print(f"Sanitized raw evidence report successfully saved to: {out_path}")
 
 if __name__ == "__main__":
     main()
