@@ -127,14 +127,15 @@ def test_charter_gate_success_flow(direct_vm, direct_deploy, direct_alice, direc
     prop = contract.get_proposal(pid)
     assert prop["state"] == STATE_APPROVED
     assert prop["payout_state"] == PAYOUT_PENDING
-    assert contract.reserved_funds == 100
-
-    # Confirm delivery
-    contract.confirm_delivery(pid)
-    prop = contract.get_proposal(pid)
-    assert prop["state"] == STATE_FINALIZED
-    assert prop["payout_state"] == PAYOUT_DELIVERED
     assert contract.reserved_funds == 0
+    assert contract.in_flight_payouts == 100
+    payout_info = contract.get_payout(pid)
+    assert payout_info["is_liability"] is True
+    assert payout_info["in_flight"] is True
+
+    # Confirm delivery without verifiable proof must revert
+    with pytest.raises(Exception, match="Unverified delivery confirmation not permitted"):
+        contract.confirm_delivery(pid)
 
 def test_constructor_empty_charter(direct_vm, direct_deploy, direct_alice):
     alice_hex = _addr_hex(direct_alice)
@@ -385,17 +386,18 @@ def test_release_expired_eligible(direct_vm, direct_deploy, direct_alice, direct
     # Claim payout
     contract.claim_payout(pid1)
     assert contract.get_proposal(pid1)["payout_state"] == PAYOUT_PENDING
-    assert contract.reserved_funds == start_reserved
+    assert contract.reserved_funds == start_reserved - 50
+    assert contract.in_flight_payouts == 50
+    assert contract.get_payout(pid1)["is_liability"] is True
+    assert contract.get_payout(pid1)["in_flight"] is True
     
     # Verify exactly one EmitExternalMessage
     emissions = sum(1 for t in direct_vm._traces if "EmitExternalMessage" in str(t))
     assert emissions == 1, f"Expected exactly 1 external message for payment to be emitted, got {emissions}"
     
-    # Confirm delivery
-    contract.confirm_delivery(pid1)
-    assert contract.get_proposal(pid1)["state"] == STATE_FINALIZED
-    assert contract.get_proposal(pid1)["payout_state"] == PAYOUT_DELIVERED
-    assert contract.reserved_funds == start_reserved - 50
+    # Confirm delivery without verifiable proof must revert
+    with pytest.raises(Exception, match="Unverified delivery confirmation not permitted"):
+        contract.confirm_delivery(pid1)
     
     # Test that finalize also fails after release_expired (only one payment)
     with direct_vm.expect_revert():
@@ -469,10 +471,12 @@ def test_payout_pending_delivery(direct_vm, direct_deploy, direct_alice, direct_
     prop = contract.get_proposal(pid)
     assert prop["state"] == STATE_APPROVED
     assert prop["payout_state"] == PAYOUT_PENDING
-    assert contract.reserved_funds == 100
+    assert contract.reserved_funds == 0
+    assert contract.in_flight_payouts == 100
     payout_info = contract.get_payout(pid)
     assert payout_info["payout_state"] == PAYOUT_PENDING
     assert payout_info["is_liability"] is True
+    assert payout_info["in_flight"] is True
 
 
 def test_payout_duplicate_attempts_revert(direct_vm, direct_deploy, direct_alice, direct_bob):
@@ -514,12 +518,9 @@ def test_payout_duplicate_attempts_revert(direct_vm, direct_deploy, direct_alice
     with direct_vm.expect_revert("Payout transfer already pending"):
         contract.retry_payout(pid)
 
-    # Confirm delivery
-    contract.confirm_delivery(pid)
-
-    # Cannot claim or retry after delivery
-    with direct_vm.expect_revert("Proposal is not approved"):
-        contract.claim_payout(pid)
+    # Confirm delivery without verifiable proof reverts
+    with direct_vm.expect_revert("Unverified delivery confirmation not permitted by runtime"):
+        contract.confirm_delivery(pid)
 
 
 def test_payout_failed_delivery_recovery_and_retry(direct_vm, direct_deploy, direct_alice, direct_bob):
@@ -550,24 +551,17 @@ def test_payout_failed_delivery_recovery_and_retry(direct_vm, direct_deploy, dir
     contract.claim_payout(pid)
     assert contract.get_payout(pid)["payout_state"] == PAYOUT_PENDING
 
-    # Report delivery failure
-    contract.report_failed_delivery(pid)
-    prop = contract.get_proposal(pid)
-    assert prop["state"] == STATE_APPROVED
-    assert prop["payout_state"] == PAYOUT_FAILED
-    assert contract.reserved_funds == 100  # Liability protected!
+    # Unverified delivery failure reporting is rejected
+    with direct_vm.expect_revert("Unverified delivery failure reporting not permitted by runtime"):
+        contract.report_failed_delivery(pid)
+
+    # Retry while pending reverts
+    with direct_vm.expect_revert("Payout transfer already pending"):
+        contract.retry_payout(pid)
+
+    # Payout remains tracked as in-flight liability
     assert contract.get_payout(pid)["is_liability"] is True
-
-    # Retry payout puts it back to pending
-    contract.retry_payout(pid)
-    assert contract.get_payout(pid)["payout_state"] == PAYOUT_PENDING
-    assert contract.reserved_funds == 100
-
-    # Finally delivery succeeds and confirms
-    contract.confirm_delivery(pid)
-    assert contract.get_proposal(pid)["state"] == STATE_FINALIZED
-    assert contract.get_payout(pid)["payout_state"] == PAYOUT_DELIVERED
-    assert contract.reserved_funds == 0
+    assert contract.get_payout(pid)["in_flight"] is True
 
 
 def test_payout_sponsor_withdrawal_protection_against_liabilities(direct_vm, direct_deploy, direct_alice, direct_bob):
@@ -621,17 +615,18 @@ def test_payout_sponsor_withdrawal_protection_against_liabilities(direct_vm, dir
         contract.withdraw_treasury(1)
 
 
+
 def test_attack_false_failure_causes_duplicate_payment(direct_vm, direct_deploy, direct_alice, direct_bob):
     """
-    VULNERABILITY REPRODUCTION 1: False failure followed by retry.
-    An approved recipient (or colluding caller) claims payout. The transfer of 100 wei
-    is emitted. The caller then reports false failure via report_failed_delivery().
-    Because the contract accepts this attestation without verifying the transfer outcome,
-    retry_payout() emits a second 100 wei transfer, causing a duplicate payment / double spend.
+    ATTACK ATTEMPT: False failure reporting and duplicate payment retry.
+    Against the corrected contract, unverified caller reporting is strictly forbidden.
+    Calling report_failed_delivery() reverts, retry_payout() reverts, and duplicate
+    claim_payout() reverts, preventing duplicate payments.
     """
     alice_hex = _addr_hex(direct_alice)
     bob_hex = _addr_hex(direct_bob)
-    sunset = int(time.time()) + 100000
+    now = int(time.time())
+    sunset = now + 1000
     contract = direct_deploy("contracts/charter_gate.py", alice_hex, "Dinners.", f"{alice_hex},{bob_hex}", 1, 1, sunset)
 
     direct_vm.deal(direct_alice, 500)
@@ -641,7 +636,6 @@ def test_attack_false_failure_causes_duplicate_payment(direct_vm, direct_deploy,
     contract.deposit()
     direct_vm.value = 0
 
-    now = int(time.time())
     evidence_hash = hashlib.sha256("Receipt for team dinner.".encode('utf-8')).hexdigest()
     pid = contract.propose(bob_hex, 100, "Dinner", "https://raw.githubusercontent.com/evidence", evidence_hash, now+1000, now+2000)
     _setup_mocks(direct_vm, True)
@@ -666,29 +660,30 @@ def test_attack_false_failure_causes_duplicate_payment(direct_vm, direct_deploy,
     contract.claim_payout(pid)
     assert len(emitted_transfers) == 1
     assert emitted_transfers[0]["value"] == 100
+    assert contract.get_payout(pid)["payout_state"] == PAYOUT_PENDING
 
-    # 2. Attack: Caller falsely reports failure despite successful transfer
-    contract.report_failed_delivery(pid)
-    assert contract.get_proposal(pid)["payout_state"] == PAYOUT_FAILED
+    # 2. Attack Attempt: Caller tries to falsely report failure
+    with pytest.raises(Exception, match="Unverified delivery failure reporting not permitted"):
+        contract.report_failed_delivery(pid)
 
-    # 3. Caller retries payout, triggering a SECOND transfer emission
-    contract.retry_payout(pid)
-    assert len(emitted_transfers) == 2
-    assert emitted_transfers[1]["value"] == 100
+    # 3. Attack Attempt: Caller tries to call retry_payout or duplicate claim
+    with pytest.raises(Exception, match="Payout transfer already pending"):
+        contract.retry_payout(pid)
 
-    # Total funds emitted to recipient Bob = 200 wei for a 100 wei proposal!
+    with pytest.raises(Exception, match="Payout transfer already pending"):
+        contract.claim_payout(pid)
+
+    # Exactly 1 transfer was emitted. Duplicate payment is strictly defeated.
+    assert len(emitted_transfers) == 1
     total_emitted = sum(t["value"] for t in emitted_transfers)
-    assert total_emitted == 200, f"Expected 200 wei duplicate payout, got {total_emitted}"
+    assert total_emitted == 100
 
 
 def test_attack_false_delivery_confirmation_releases_unpaid_liability(direct_vm, direct_deploy, direct_alice, direct_bob):
     """
-    VULNERABILITY REPRODUCTION 2: False delivery confirmation.
-    A proposal is approved with 100 wei reserved as a protected liability.
-    A transfer is initiated or pending (or failed). A sponsor falsely calls confirm_delivery()
-    without verifying actual delivery. The contract wipes out the liability and decrements
-    reserved_funds to 0. After sunset, the sponsor withdraws the backing funds, permanently
-    depriving the recipient of their approved payment.
+    ATTACK ATTEMPT: False delivery confirmation erasing unpaid liabilities.
+    Against the corrected contract, unverified delivery confirmation is strictly forbidden.
+    Calling confirm_delivery() reverts, preserving approved payout liabilities.
     """
     alice_hex = _addr_hex(direct_alice)
     bob_hex = _addr_hex(direct_bob)
@@ -715,32 +710,240 @@ def test_attack_false_delivery_confirmation_releases_unpaid_liability(direct_vm,
 
     assert contract.reserved_funds == 100
     assert contract.get_payout(pid)["is_liability"] is True
+    assert contract.get_payout(pid)["payout_state"] == PAYOUT_APPROVED
 
-    # Recipient initiates payout claim
-    direct_vm.sender = direct_bob
-    contract.claim_payout(pid)
-    assert contract.get_payout(pid)["payout_state"] == PAYOUT_PENDING
-
-    # Attack: Sponsor falsely calls confirm_delivery without payment verification
+    # Attack Attempt: Sponsor tries to falsely confirm delivery to erase liability
     direct_vm.sender = direct_alice
-    contract.confirm_delivery(pid)
+    with pytest.raises(Exception, match="Unverified delivery confirmation not permitted"):
+        contract.confirm_delivery(pid)
 
-    # Liability is prematurely erased and reserved_funds decremented to 0
-    assert contract.reserved_funds == 0
-    assert contract.get_payout(pid)["is_liability"] is False
-    assert contract.get_proposal(pid)["state"] == STATE_FINALIZED
+    # Liability remains protected and identifiable
+    assert contract.reserved_funds == 100
+    assert contract.get_payout(pid)["is_liability"] is True
+    assert contract.get_proposal(pid)["state"] == STATE_APPROVED
 
-    # Warp past sunset: Sponsor now drains the full balance, consuming funds that backed the payout!
+    # Warp past sunset: Sponsor tries to drain the full balance (500 wei)
     from datetime import datetime, timezone
     new_time = datetime.fromtimestamp(now + 2000, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000000Z")
     direct_vm.warp(new_time)
     import genlayer
     genlayer.message.datetime = new_time
 
-    # Sponsor successfully withdraws 500 wei because reserved_funds was falsely reduced to 0!
+    # Sponsor CANNOT withdraw 500 wei because 100 wei is reserved for the liability!
+    with pytest.raises(Exception, match="Insufficient balance"):
+        contract.withdraw_treasury(500)
+
+    # Sponsor can only withdraw up to available unreserved funds (400 wei)
+    contract.withdraw_treasury(400)
+    assert contract.reserved_funds == 100
+    assert contract.get_payout(pid)["is_liability"] is True
+
+
+def test_genuine_failure_and_safe_retry(direct_vm, direct_deploy, direct_alice, direct_bob):
+    """
+    Genuine failure and safe retry:
+    When the contract has insufficient balance at claim time, claim_payout fails and reverts
+    cleanly without advancing payout_state or corrupting accounting.
+    After funds are deposited, calling claim_payout retries safely and succeeds.
+    """
+    alice_hex = _addr_hex(direct_alice)
+    bob_hex = _addr_hex(direct_bob)
+    now = int(time.time())
+    sunset = now + 1000
+    contract = direct_deploy("contracts/charter_gate.py", alice_hex, "Dinners.", f"{alice_hex},{bob_hex}", 1, 1, sunset)
+
+    # Deposit 100 wei so proposal passes balance check at propose time
+    direct_vm.deal(direct_alice, 1000)
+    direct_vm.deal(direct_vm._contract_address, 100)
     direct_vm.sender = direct_alice
-    contract.withdraw_treasury(500)
-    # The recipient cannot ever be paid because the liability was wiped and funds drained!
+    direct_vm.value = 100
+    contract.deposit()
+    direct_vm.value = 0
+
+    evidence_hash = hashlib.sha256("Receipt for team dinner.".encode('utf-8')).hexdigest()
+    pid = contract.propose(bob_hex, 100, "Dinner", "https://raw.githubusercontent.com/evidence", evidence_hash, now+200, now+400)
+    _setup_mocks(direct_vm, True)
+    contract.screen_proposal(pid)
+    direct_vm.sender = direct_alice
+    contract.vote(pid, True)
+    direct_vm.sender = direct_bob
+    contract.vote(pid, True)
+    contract.finalize(pid)
+
+    assert contract.get_payout(pid)["payout_state"] == PAYOUT_APPROVED
+    assert contract.get_payout(pid)["is_liability"] is True
+
+    # Simulate temporary balance deficit before claim (balance drops below 100)
+    direct_vm.deal(direct_vm._contract_address, 50)
+
+    # Claim fails due to insufficient balance
+    direct_vm.sender = direct_bob
+    with pytest.raises(Exception, match="Insufficient contract balance for payout"):
+        contract.claim_payout(pid)
+
+    # Proposal state is NOT corrupted; remains approved and claimable
+    assert contract.get_payout(pid)["payout_state"] == PAYOUT_APPROVED
+    assert contract.get_payout(pid)["is_liability"] is True
+    assert contract.reserved_funds == 100
+
+    # Hook to track transfer emissions
+    emitted = []
+    direct_vm._gl_call_hook = lambda vm, req: (
+        emitted.append(req["EmitExternalMessage"]) or {"ok": None}
+        if isinstance(req, dict) and "EmitExternalMessage" in req
+        else None
+    )
+
+    # Fund the contract properly
+    direct_vm.deal(direct_vm._contract_address, 500)
+    direct_vm.sender = direct_alice
+    direct_vm.value = 450
+    contract.deposit()
+    direct_vm.value = 0
+
+    # Safe retry: recipient claims payout again and succeeds
+    direct_vm.sender = direct_bob
+    contract.claim_payout(pid)
+
+    assert len(emitted) == 1
+    assert emitted[0]["value"] == 100
+    assert contract.get_payout(pid)["payout_state"] == PAYOUT_PENDING
+    assert contract.get_payout(pid)["in_flight"] is True
+    assert contract.reserved_funds == 0
+    assert contract.in_flight_payouts == 100
+
+
+def test_multiple_outstanding_liabilities(direct_vm, direct_deploy, direct_alice, direct_bob):
+    """
+    Multiple outstanding liabilities:
+    Verify that multiple approved proposals each have protected, identifiable liabilities,
+    cannot be overdrawn by new proposals, and properly transition accounting upon claim.
+    """
+    alice_hex = _addr_hex(direct_alice)
+    bob_hex = _addr_hex(direct_bob)
+    now = int(time.time())
+    sunset = now + 1000
+    contract = direct_deploy("contracts/charter_gate.py", alice_hex, "Dinners.", f"{alice_hex},{bob_hex}", 1, 1, sunset)
+
+    # Deposit 500 wei
+    direct_vm.deal(direct_alice, 1000)
+    direct_vm.deal(direct_vm._contract_address, 500)
+    direct_vm.sender = direct_alice
+    direct_vm.value = 500
+    contract.deposit()
+    direct_vm.value = 0
+
+    evidence_hash = hashlib.sha256("Receipt for team dinner.".encode('utf-8')).hexdigest()
+
+    # Proposal 0: 100 wei
+    pid0 = contract.propose(bob_hex, 100, "Dinner 1", "https://raw.githubusercontent.com/evidence", evidence_hash, now+200, now+400)
+    # Proposal 1: 150 wei
+    pid1 = contract.propose(bob_hex, 150, "Dinner 2", "https://raw.githubusercontent.com/evidence", evidence_hash, now+200, now+400)
+
+    assert contract.reserved_funds == 250
+
+    # Screen, vote, finalize both
+    _setup_mocks(direct_vm, True)
+    contract.screen_proposal(pid0)
+    contract.screen_proposal(pid1)
+
+    direct_vm.sender = direct_alice
+    contract.vote(pid0, True)
+    contract.vote(pid1, True)
+    direct_vm.sender = direct_bob
+    contract.vote(pid0, True)
+    contract.vote(pid1, True)
+    contract.finalize(pid0)
+    contract.finalize(pid1)
+
+    # Both are approved liabilities
+    payout0 = contract.get_payout(pid0)
+    payout1 = contract.get_payout(pid1)
+    assert payout0["is_liability"] is True and payout0["amount"] == 100
+    assert payout1["is_liability"] is True and payout1["amount"] == 150
+    assert contract.reserved_funds == 250
+
+    # Attempt to propose Proposal 2 for 300 wei: 250 + 300 = 550 > 500 balance -> MUST REVERT
+    with pytest.raises(Exception, match="Insufficient available funds"):
+        contract.propose(bob_hex, 300, "Dinner 3", "https://raw.githubusercontent.com/evidence", evidence_hash, now+200, now+400)
+
+    # Propose Proposal 2 for 250 wei: 250 + 250 = 500 balance -> SUCCEEDS
+    pid2 = contract.propose(bob_hex, 250, "Dinner 3", "https://raw.githubusercontent.com/evidence", evidence_hash, now+200, now+400)
+    assert contract.reserved_funds == 500
+
+    # Claim payout 0 (100 wei)
+    emitted = []
+    direct_vm._gl_call_hook = lambda vm, req: (
+        emitted.append(req["EmitExternalMessage"]) or {"ok": None}
+        if isinstance(req, dict) and "EmitExternalMessage" in req
+        else None
+    )
+    direct_vm.sender = direct_bob
+    contract.claim_payout(pid0)
+
+    # Reserved funds on balance decrements to 400, in_flight becomes 100
+    assert contract.reserved_funds == 400
+    assert contract.in_flight_payouts == 100
+    assert contract.get_payout(pid0)["in_flight"] is True
+    assert contract.get_payout(pid1)["is_liability"] is True and contract.get_payout(pid1)["in_flight"] is False
+
+
+def test_sunset_withdrawal_respects_unresolved_liabilities(direct_vm, direct_deploy, direct_alice, direct_bob):
+    """
+    Sunset withdrawal respect:
+    Even after the charter sunset time, the sponsor cannot withdraw funds owed to
+    unresolved payout liabilities.
+    """
+    alice_hex = _addr_hex(direct_alice)
+    bob_hex = _addr_hex(direct_bob)
+    now = int(time.time())
+    sunset = now + 1000
+    contract = direct_deploy("contracts/charter_gate.py", alice_hex, "Dinners.", f"{alice_hex},{bob_hex}", 1, 1, sunset)
+
+    direct_vm.deal(direct_alice, 1000)
+    direct_vm.deal(direct_vm._contract_address, 500)
+    direct_vm.sender = direct_alice
+    direct_vm.value = 500
+    contract.deposit()
+    direct_vm.value = 0
+
+    evidence_hash = hashlib.sha256("Receipt for team dinner.".encode('utf-8')).hexdigest()
+    pid = contract.propose(bob_hex, 200, "Dinner", "https://raw.githubusercontent.com/evidence", evidence_hash, now+200, now+400)
+    _setup_mocks(direct_vm, True)
+    contract.screen_proposal(pid)
+    direct_vm.sender = direct_alice
+    contract.vote(pid, True)
+    direct_vm.sender = direct_bob
+    contract.vote(pid, True)
+    contract.finalize(pid)
+
+    assert contract.reserved_funds == 200
+    assert contract.get_payout(pid)["is_liability"] is True
+
+    # Warp past sunset
+    from datetime import datetime, timezone
+    new_time = datetime.fromtimestamp(now + 2000, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000000Z")
+    direct_vm.warp(new_time)
+    import genlayer
+    genlayer.message.datetime = new_time
+
+    # Sponsor tries to withdraw 400 wei (500 balance - 200 reserved = 300 available) -> REVERTS
+    direct_vm.sender = direct_alice
+    with pytest.raises(Exception, match="Insufficient balance"):
+        contract.withdraw_treasury(400)
+
+    # Sponsor withdraws exactly 300 wei -> SUCCEEDS
+    emitted = []
+    direct_vm._gl_call_hook = lambda vm, req: (
+        emitted.append(req["EmitExternalMessage"]) or {"ok": None}
+        if isinstance(req, dict) and "EmitExternalMessage" in req
+        else None
+    )
+    contract.withdraw_treasury(300)
+    assert len(emitted) == 1
+    assert emitted[0]["value"] == 300
+    assert contract.reserved_funds == 200
+    assert contract.get_payout(pid)["is_liability"] is True
 
 
 
