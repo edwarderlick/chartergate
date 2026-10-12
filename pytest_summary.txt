@@ -1,10 +1,10 @@
-﻿============================= test session starts =============================
+============================= test session starts =============================
 platform win32 -- Python 3.12.10, pytest-9.1.1, pluggy-1.6.0
 rootdir: D:\CharterGate
 configfile: pyproject.toml
 plugins: genlayer-test-0.30.0rc2
-collected 17 items
+collected 19 items
 
-tests\direct\test_charter_gate.py .................                      [100%]
+tests\direct\test_charter_gate.py ...................                    [100%]
 
-============================= 17 passed in 3.17s ==============================
+============================= 19 passed in 4.38s ==============================

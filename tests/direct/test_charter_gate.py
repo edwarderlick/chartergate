@@ -621,3 +621,126 @@ def test_payout_sponsor_withdrawal_protection_against_liabilities(direct_vm, dir
         contract.withdraw_treasury(1)
 
 
+def test_attack_false_failure_causes_duplicate_payment(direct_vm, direct_deploy, direct_alice, direct_bob):
+    """
+    VULNERABILITY REPRODUCTION 1: False failure followed by retry.
+    An approved recipient (or colluding caller) claims payout. The transfer of 100 wei
+    is emitted. The caller then reports false failure via report_failed_delivery().
+    Because the contract accepts this attestation without verifying the transfer outcome,
+    retry_payout() emits a second 100 wei transfer, causing a duplicate payment / double spend.
+    """
+    alice_hex = _addr_hex(direct_alice)
+    bob_hex = _addr_hex(direct_bob)
+    sunset = int(time.time()) + 100000
+    contract = direct_deploy("contracts/charter_gate.py", alice_hex, "Dinners.", f"{alice_hex},{bob_hex}", 1, 1, sunset)
+
+    direct_vm.deal(direct_alice, 500)
+    direct_vm.deal(direct_vm._contract_address, 500)
+    direct_vm.sender = direct_alice
+    direct_vm.value = 500
+    contract.deposit()
+    direct_vm.value = 0
+
+    now = int(time.time())
+    evidence_hash = hashlib.sha256("Receipt for team dinner.".encode('utf-8')).hexdigest()
+    pid = contract.propose(bob_hex, 100, "Dinner", "https://raw.githubusercontent.com/evidence", evidence_hash, now+1000, now+2000)
+    _setup_mocks(direct_vm, True)
+    contract.screen_proposal(pid)
+    direct_vm.sender = direct_alice
+    contract.vote(pid, True)
+    direct_vm.sender = direct_bob
+    contract.vote(pid, True)
+    contract.finalize(pid)
+
+    # Track emitted external transfers
+    emitted_transfers = []
+    def capture_hook(vm, req):
+        if isinstance(req, dict) and "EmitExternalMessage" in req:
+            emitted_transfers.append(req["EmitExternalMessage"])
+            return {"ok": None}
+        return None
+    direct_vm._gl_call_hook = capture_hook
+
+    # 1. First claim emits transfer of 100 wei to Bob
+    direct_vm.sender = direct_bob
+    contract.claim_payout(pid)
+    assert len(emitted_transfers) == 1
+    assert emitted_transfers[0]["value"] == 100
+
+    # 2. Attack: Caller falsely reports failure despite successful transfer
+    contract.report_failed_delivery(pid)
+    assert contract.get_proposal(pid)["payout_state"] == PAYOUT_FAILED
+
+    # 3. Caller retries payout, triggering a SECOND transfer emission
+    contract.retry_payout(pid)
+    assert len(emitted_transfers) == 2
+    assert emitted_transfers[1]["value"] == 100
+
+    # Total funds emitted to recipient Bob = 200 wei for a 100 wei proposal!
+    total_emitted = sum(t["value"] for t in emitted_transfers)
+    assert total_emitted == 200, f"Expected 200 wei duplicate payout, got {total_emitted}"
+
+
+def test_attack_false_delivery_confirmation_releases_unpaid_liability(direct_vm, direct_deploy, direct_alice, direct_bob):
+    """
+    VULNERABILITY REPRODUCTION 2: False delivery confirmation.
+    A proposal is approved with 100 wei reserved as a protected liability.
+    A transfer is initiated or pending (or failed). A sponsor falsely calls confirm_delivery()
+    without verifying actual delivery. The contract wipes out the liability and decrements
+    reserved_funds to 0. After sunset, the sponsor withdraws the backing funds, permanently
+    depriving the recipient of their approved payment.
+    """
+    alice_hex = _addr_hex(direct_alice)
+    bob_hex = _addr_hex(direct_bob)
+    now = int(time.time())
+    sunset = now + 1000
+    contract = direct_deploy("contracts/charter_gate.py", alice_hex, "Dinners.", f"{alice_hex},{bob_hex}", 1, 1, sunset)
+
+    direct_vm.deal(direct_alice, 500)
+    direct_vm.deal(direct_vm._contract_address, 500)
+    direct_vm.sender = direct_alice
+    direct_vm.value = 500
+    contract.deposit()
+    direct_vm.value = 0
+
+    evidence_hash = hashlib.sha256("Receipt for team dinner.".encode('utf-8')).hexdigest()
+    pid = contract.propose(bob_hex, 100, "Dinner", "https://raw.githubusercontent.com/evidence", evidence_hash, now+200, now+400)
+    _setup_mocks(direct_vm, True)
+    contract.screen_proposal(pid)
+    direct_vm.sender = direct_alice
+    contract.vote(pid, True)
+    direct_vm.sender = direct_bob
+    contract.vote(pid, True)
+    contract.finalize(pid)
+
+    assert contract.reserved_funds == 100
+    assert contract.get_payout(pid)["is_liability"] is True
+
+    # Recipient initiates payout claim
+    direct_vm.sender = direct_bob
+    contract.claim_payout(pid)
+    assert contract.get_payout(pid)["payout_state"] == PAYOUT_PENDING
+
+    # Attack: Sponsor falsely calls confirm_delivery without payment verification
+    direct_vm.sender = direct_alice
+    contract.confirm_delivery(pid)
+
+    # Liability is prematurely erased and reserved_funds decremented to 0
+    assert contract.reserved_funds == 0
+    assert contract.get_payout(pid)["is_liability"] is False
+    assert contract.get_proposal(pid)["state"] == STATE_FINALIZED
+
+    # Warp past sunset: Sponsor now drains the full balance, consuming funds that backed the payout!
+    from datetime import datetime, timezone
+    new_time = datetime.fromtimestamp(now + 2000, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000000Z")
+    direct_vm.warp(new_time)
+    import genlayer
+    genlayer.message.datetime = new_time
+
+    # Sponsor successfully withdraws 500 wei because reserved_funds was falsely reduced to 0!
+    direct_vm.sender = direct_alice
+    contract.withdraw_treasury(500)
+    # The recipient cannot ever be paid because the liability was wiped and funds drained!
+
+
+
