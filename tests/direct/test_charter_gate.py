@@ -14,9 +14,7 @@ STATE_FINALIZED = 7
 
 PAYOUT_NONE = 0
 PAYOUT_APPROVED = 1
-PAYOUT_PENDING = 2
-PAYOUT_DELIVERED = 3
-PAYOUT_FAILED = 4
+PAYOUT_DELIVERED = 2
 
 MAX_LIFETIME_PROPOSALS = 25
 
@@ -125,17 +123,12 @@ def test_charter_gate_success_flow(direct_vm, direct_deploy, direct_alice, direc
     # Claim payout
     contract.claim_payout(pid)
     prop = contract.get_proposal(pid)
-    assert prop["state"] == STATE_APPROVED
-    assert prop["payout_state"] == PAYOUT_PENDING
+    assert prop["state"] == STATE_FINALIZED
+    assert prop["payout_state"] == PAYOUT_DELIVERED
     assert contract.reserved_funds == 0
-    assert contract.in_flight_payouts == 100
     payout_info = contract.get_payout(pid)
-    assert payout_info["is_liability"] is True
-    assert payout_info["in_flight"] is True
-
-    # Confirm delivery without verifiable proof must revert
-    with pytest.raises(Exception, match="Unverified delivery confirmation not permitted"):
-        contract.confirm_delivery(pid)
+    assert payout_info["is_liability"] is False
+    assert payout_info["payout_state"] == PAYOUT_DELIVERED
 
 def test_constructor_empty_charter(direct_vm, direct_deploy, direct_alice):
     alice_hex = _addr_hex(direct_alice)
@@ -385,19 +378,13 @@ def test_release_expired_eligible(direct_vm, direct_deploy, direct_alice, direct
     
     # Claim payout
     contract.claim_payout(pid1)
-    assert contract.get_proposal(pid1)["payout_state"] == PAYOUT_PENDING
+    assert contract.get_proposal(pid1)["payout_state"] == PAYOUT_DELIVERED
     assert contract.reserved_funds == start_reserved - 50
-    assert contract.in_flight_payouts == 50
-    assert contract.get_payout(pid1)["is_liability"] is True
-    assert contract.get_payout(pid1)["in_flight"] is True
+    assert contract.get_payout(pid1)["is_liability"] is False
     
     # Verify exactly one EmitExternalMessage
     emissions = sum(1 for t in direct_vm._traces if "EmitExternalMessage" in str(t))
     assert emissions == 1, f"Expected exactly 1 external message for payment to be emitted, got {emissions}"
-    
-    # Confirm delivery without verifiable proof must revert
-    with pytest.raises(Exception, match="Unverified delivery confirmation not permitted"):
-        contract.confirm_delivery(pid1)
     
     # Test that finalize also fails after release_expired (only one payment)
     with direct_vm.expect_revert():
@@ -466,17 +453,15 @@ def test_payout_pending_delivery(direct_vm, direct_deploy, direct_alice, direct_
     contract.vote(pid, True)
     contract.finalize(pid)
 
-    # Claim moves to PAYOUT_PENDING, transfer emitted, reserved_funds protected
+    # Claim executes payout: transfer emitted, transitions to PAYOUT_DELIVERED / STATE_FINALIZED, reserved_funds released
     contract.claim_payout(pid)
     prop = contract.get_proposal(pid)
-    assert prop["state"] == STATE_APPROVED
-    assert prop["payout_state"] == PAYOUT_PENDING
+    assert prop["state"] == STATE_FINALIZED
+    assert prop["payout_state"] == PAYOUT_DELIVERED
     assert contract.reserved_funds == 0
-    assert contract.in_flight_payouts == 100
     payout_info = contract.get_payout(pid)
-    assert payout_info["payout_state"] == PAYOUT_PENDING
-    assert payout_info["is_liability"] is True
-    assert payout_info["in_flight"] is True
+    assert payout_info["payout_state"] == PAYOUT_DELIVERED
+    assert payout_info["is_liability"] is False
 
 
 def test_payout_duplicate_attempts_revert(direct_vm, direct_deploy, direct_alice, direct_bob):
@@ -510,17 +495,13 @@ def test_payout_duplicate_attempts_revert(direct_vm, direct_deploy, direct_alice
     # First claim succeeds
     contract.claim_payout(pid)
 
-    # Repeated claim while pending reverts
-    with direct_vm.expect_revert("Payout transfer already pending"):
+    # Repeated claim when already delivered reverts
+    with direct_vm.expect_revert("Payout already delivered"):
         contract.claim_payout(pid)
 
-    # Retry while pending reverts
-    with direct_vm.expect_revert("Payout transfer already pending"):
+    # Retry when already delivered reverts
+    with direct_vm.expect_revert("Payout already delivered"):
         contract.retry_payout(pid)
-
-    # Confirm delivery without verifiable proof reverts
-    with direct_vm.expect_revert("Unverified delivery confirmation not permitted by runtime"):
-        contract.confirm_delivery(pid)
 
 
 def test_payout_failed_delivery_recovery_and_retry(direct_vm, direct_deploy, direct_alice, direct_bob):
@@ -547,21 +528,33 @@ def test_payout_failed_delivery_recovery_and_retry(direct_vm, direct_deploy, dir
     contract.vote(pid, True)
     contract.finalize(pid)
 
-    # Claim payout puts in pending
-    contract.claim_payout(pid)
-    assert contract.get_payout(pid)["payout_state"] == PAYOUT_PENDING
-
-    # Unverified delivery failure reporting is rejected
-    with direct_vm.expect_revert("Unverified delivery failure reporting not permitted by runtime"):
-        contract.report_failed_delivery(pid)
-
-    # Retry while pending reverts
-    with direct_vm.expect_revert("Payout transfer already pending"):
-        contract.retry_payout(pid)
-
-    # Payout remains tracked as in-flight liability
+    # Payout is approved liability
+    assert contract.get_payout(pid)["payout_state"] == PAYOUT_APPROVED
     assert contract.get_payout(pid)["is_liability"] is True
-    assert contract.get_payout(pid)["in_flight"] is True
+
+    # Underfunded claim reverts cleanly
+    direct_vm.deal(direct_vm._contract_address, 50)
+    with direct_vm.expect_revert("Insufficient contract balance for payout"):
+        contract.claim_payout(pid)
+
+    # Payout remains tracked as recoverable liability
+    assert contract.get_payout(pid)["payout_state"] == PAYOUT_APPROVED
+    assert contract.get_payout(pid)["is_liability"] is True
+    assert contract.reserved_funds == 100
+
+    # Fund the contract
+    direct_vm.deal(direct_vm._contract_address, 500)
+    direct_vm.sender = direct_alice
+    direct_vm.value = 450
+    contract.deposit()
+    direct_vm.value = 0
+
+    # Safe retry succeeds and delivers
+    direct_vm.sender = direct_bob
+    contract.retry_payout(pid)
+    assert contract.get_payout(pid)["payout_state"] == PAYOUT_DELIVERED
+    assert contract.get_payout(pid)["is_liability"] is False
+    assert contract.reserved_funds == 0
 
 
 def test_payout_sponsor_withdrawal_protection_against_liabilities(direct_vm, direct_deploy, direct_alice, direct_bob):
@@ -660,17 +653,13 @@ def test_attack_false_failure_causes_duplicate_payment(direct_vm, direct_deploy,
     contract.claim_payout(pid)
     assert len(emitted_transfers) == 1
     assert emitted_transfers[0]["value"] == 100
-    assert contract.get_payout(pid)["payout_state"] == PAYOUT_PENDING
+    assert contract.get_payout(pid)["payout_state"] == PAYOUT_DELIVERED
 
-    # 2. Attack Attempt: Caller tries to falsely report failure
-    with pytest.raises(Exception, match="Unverified delivery failure reporting not permitted"):
-        contract.report_failed_delivery(pid)
-
-    # 3. Attack Attempt: Caller tries to call retry_payout or duplicate claim
-    with pytest.raises(Exception, match="Payout transfer already pending"):
+    # 2. Duplicate claim or retry attempts revert
+    with pytest.raises(Exception, match="Payout already delivered"):
         contract.retry_payout(pid)
 
-    with pytest.raises(Exception, match="Payout transfer already pending"):
+    with pytest.raises(Exception, match="Payout already delivered"):
         contract.claim_payout(pid)
 
     # Exactly 1 transfer was emitted. Duplicate payment is strictly defeated.
@@ -712,12 +701,7 @@ def test_attack_false_delivery_confirmation_releases_unpaid_liability(direct_vm,
     assert contract.get_payout(pid)["is_liability"] is True
     assert contract.get_payout(pid)["payout_state"] == PAYOUT_APPROVED
 
-    # Attack Attempt: Sponsor tries to falsely confirm delivery to erase liability
-    direct_vm.sender = direct_alice
-    with pytest.raises(Exception, match="Unverified delivery confirmation not permitted"):
-        contract.confirm_delivery(pid)
-
-    # Liability remains protected and identifiable
+    # Liability remains protected and identifiable in PAYOUT_APPROVED
     assert contract.reserved_funds == 100
     assert contract.get_payout(pid)["is_liability"] is True
     assert contract.get_proposal(pid)["state"] == STATE_APPROVED
@@ -730,6 +714,7 @@ def test_attack_false_delivery_confirmation_releases_unpaid_liability(direct_vm,
     genlayer.message.datetime = new_time
 
     # Sponsor CANNOT withdraw 500 wei because 100 wei is reserved for the liability!
+    direct_vm.sender = direct_alice
     with pytest.raises(Exception, match="Insufficient balance"):
         contract.withdraw_treasury(500)
 
@@ -807,10 +792,9 @@ def test_genuine_failure_and_safe_retry(direct_vm, direct_deploy, direct_alice, 
 
     assert len(emitted) == 1
     assert emitted[0]["value"] == 100
-    assert contract.get_payout(pid)["payout_state"] == PAYOUT_PENDING
-    assert contract.get_payout(pid)["in_flight"] is True
+    assert contract.get_payout(pid)["payout_state"] == PAYOUT_DELIVERED
+    assert contract.get_payout(pid)["is_liability"] is False
     assert contract.reserved_funds == 0
-    assert contract.in_flight_payouts == 100
 
 
 def test_multiple_outstanding_liabilities(direct_vm, direct_deploy, direct_alice, direct_bob):
@@ -881,11 +865,11 @@ def test_multiple_outstanding_liabilities(direct_vm, direct_deploy, direct_alice
     direct_vm.sender = direct_bob
     contract.claim_payout(pid0)
 
-    # Reserved funds on balance decrements to 400, in_flight becomes 100
+    # Reserved funds on balance decrements to 400 (pid0 delivered, pid1 still reserved)
     assert contract.reserved_funds == 400
-    assert contract.in_flight_payouts == 100
-    assert contract.get_payout(pid0)["in_flight"] is True
-    assert contract.get_payout(pid1)["is_liability"] is True and contract.get_payout(pid1)["in_flight"] is False
+    assert contract.get_payout(pid0)["payout_state"] == PAYOUT_DELIVERED
+    assert contract.get_payout(pid0)["is_liability"] is False
+    assert contract.get_payout(pid1)["is_liability"] is True
 
 
 def test_sunset_withdrawal_respects_unresolved_liabilities(direct_vm, direct_deploy, direct_alice, direct_bob):

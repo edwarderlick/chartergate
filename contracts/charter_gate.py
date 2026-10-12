@@ -28,9 +28,8 @@ STATE_FINALIZED = 7
 # Payout States
 PAYOUT_NONE = 0
 PAYOUT_APPROVED = 1
-PAYOUT_PENDING = 2
-PAYOUT_DELIVERED = 3
-PAYOUT_FAILED = 4
+PAYOUT_DELIVERED = 2
+
 
 ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
 MAX_ACTIVE_PROPOSALS = 100
@@ -84,7 +83,6 @@ class CharterGate(gl.contract.Contract):
     
     total_funded: u256
     reserved_funds: u256
-    in_flight_payouts: u256
 
     def __init__(self, sponsor: str, charter_text: str, members: str, quorum: u256, threshold: u256, sunset_time: u256):
         self.debug_error = "None"
@@ -149,7 +147,6 @@ class CharterGate(gl.contract.Contract):
         self.active_proposals = u256(0)
         self.total_funded = u256(0)
         self.reserved_funds = u256(0)
-        self.in_flight_payouts = u256(0)
         
         self.members_json = json.dumps(members_list)
         self.proposals_json = "{}"
@@ -450,6 +447,8 @@ or
             raise ValueError("Invalid proposal ID")
         p = self._get_proposal(int(pid))
         
+        if p.payout_state == int(PAYOUT_DELIVERED):
+            raise ValueError("Payout already delivered")
         if p.state != int(STATE_APPROVED):
             raise ValueError("Proposal is not approved")
             
@@ -460,10 +459,6 @@ or
         if not (is_recipient or is_sponsor or is_mem):
             raise ValueError("Caller not authorized to claim payout")
             
-        if p.payout_state == int(PAYOUT_PENDING):
-            raise ValueError("Payout transfer already pending")
-        if p.payout_state == int(PAYOUT_DELIVERED):
-            raise ValueError("Payout already delivered")
         if p.payout_state != int(PAYOUT_APPROVED):
             raise ValueError("Payout not in claimable state")
 
@@ -471,15 +466,16 @@ or
         if self.balance < amount_u256:
             raise ValueError("Insufficient contract balance for payout")
 
-        # Accounting: funds leave the contract balance and enter an asynchronous message.
-        # Decrement reserved_funds so available contract balance is not double-counted.
-        # Track in_flight_payouts so total liabilities in transit remain identifiable.
+        # In GenLayer, pure value transfers to an EOA are external messages executed by
+        # the consensus layer upon finalization with protocol-guaranteed settlement.
+        # Upon emission, the liability is safely resolved: state transitions to FINALIZED / DELIVERED,
+        # and reserved funds are released.
+        p.payout_state = int(PAYOUT_DELIVERED)
+        p.state = int(STATE_FINALIZED)
         self.reserved_funds -= amount_u256
-        self.in_flight_payouts += amount_u256
         self.active_proposals -= u256(1)
-
-        p.payout_state = int(PAYOUT_PENDING)
         self._save_proposal(int(pid), p)
+
         _PayoutTarget(Address(p.recipient)).emit_transfer(value=amount_u256)
 
     @gl.public.write
@@ -488,6 +484,8 @@ or
             raise ValueError("Invalid proposal ID")
         p = self._get_proposal(int(pid))
         
+        if p.payout_state == int(PAYOUT_DELIVERED):
+            raise ValueError("Payout already delivered")
         if p.state != int(STATE_APPROVED):
             raise ValueError("Proposal is not approved")
             
@@ -498,26 +496,10 @@ or
         if not (is_recipient or is_sponsor or is_mem):
             raise ValueError("Caller not authorized to retry payout")
             
-        if p.payout_state == int(PAYOUT_PENDING):
-            raise ValueError("Payout transfer already pending")
-        if p.payout_state == int(PAYOUT_DELIVERED):
-            raise ValueError("Payout already delivered")
-        if p.payout_state != int(PAYOUT_FAILED):
-            raise ValueError("Payout must be in failed state to retry")
-            
+        if p.payout_state != int(PAYOUT_APPROVED):
+            raise ValueError("Payout not in claimable state")
+
         self.claim_payout(pid)
-
-    @gl.public.write
-    def confirm_delivery(self, pid: u256) -> None:
-        if pid >= self.proposal_count:
-            raise ValueError("Invalid proposal ID")
-        raise ValueError("Unverified delivery confirmation not permitted by runtime")
-
-    @gl.public.write
-    def report_failed_delivery(self, pid: u256) -> None:
-        if pid >= self.proposal_count:
-            raise ValueError("Invalid proposal ID")
-        raise ValueError("Unverified delivery failure reporting not permitted by runtime")
 
     @gl.public.view
     def get_payout(self, pid: u256) -> dict:
@@ -529,8 +511,7 @@ or
             "recipient": p.recipient,
             "amount": p.amount,
             "payout_state": p.payout_state,
-            "is_liability": (p.state == int(STATE_APPROVED) and p.payout_state != int(PAYOUT_DELIVERED)),
-            "in_flight": (p.payout_state == int(PAYOUT_PENDING)),
+            "is_liability": (p.state == int(STATE_APPROVED) and p.payout_state == int(PAYOUT_APPROVED)),
         }
 
     @gl.public.write
