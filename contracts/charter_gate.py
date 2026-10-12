@@ -25,6 +25,13 @@ STATE_REJECTED = 5
 STATE_EXPIRED = 6
 STATE_FINALIZED = 7
 
+# Payout States
+PAYOUT_NONE = 0
+PAYOUT_APPROVED = 1
+PAYOUT_PENDING = 2
+PAYOUT_DELIVERED = 3
+PAYOUT_FAILED = 4
+
 ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
 MAX_ACTIVE_PROPOSALS = 100
 MAX_LIFETIME_PROPOSALS = 25
@@ -35,6 +42,15 @@ def _get_now_ts() -> int:
 
 def _hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+def _parse_llm_json(raw):
+    if isinstance(raw, dict):
+        return raw
+    s = str(raw).strip().replace("```json", "").replace("```", "").strip()
+    start, end = s.find("{"), s.rfind("}") + 1
+    if start >= 0 and end > start:
+        s = s[start:end]
+    return json.loads(s)
 
 @dataclass
 class Proposal:
@@ -50,6 +66,7 @@ class Proposal:
     yes_votes: int
     no_votes: int
     eligibility_details: str
+    payout_state: int = 0
 
 class CharterGate(gl.contract.Contract):
     debug_error: str
@@ -156,7 +173,10 @@ class CharterGate(gl.contract.Contract):
         pid_str = str(pid)
         if pid_str not in proposals_dict:
             raise ValueError("Invalid proposal ID")
-        return Proposal(**proposals_dict[pid_str])
+        data = dict(proposals_dict[pid_str])
+        if "payout_state" not in data:
+            data["payout_state"] = int(PAYOUT_NONE)
+        return Proposal(**data)
         
     def _save_proposal(self, pid: int, p: Proposal) -> None:
         proposals_dict = json.loads(self.proposals_json)
@@ -236,7 +256,8 @@ class CharterGate(gl.contract.Contract):
             state=int(STATE_PENDING),
             yes_votes=0,
             no_votes=0,
-            eligibility_details=""
+            eligibility_details="",
+            payout_state=int(PAYOUT_NONE)
         )
         self._save_proposal(pid, p)
         return u256(pid)
@@ -304,7 +325,7 @@ or
             try:
                 result_str = gl.nondet.exec_prompt(task)
                 try:
-                    result = json.loads(result_str) if isinstance(result_str, str) else result_str
+                    result = _parse_llm_json(result_str)
                 except Exception:
                     return json.dumps({"outcome": "MALFORMED_LLM_OUTPUT"})
                 
@@ -406,22 +427,125 @@ or
                 
             if total_votes >= int(self.quorum) and p.yes_votes >= int(self.threshold):
                 p.state = int(STATE_APPROVED)
+                p.payout_state = int(PAYOUT_APPROVED)
             else:
                 p.state = int(STATE_REJECTED)
-                
-        if p.state == int(STATE_APPROVED):
-            p.state = int(STATE_FINALIZED)
-            self.reserved_funds -= u256(p.amount)
-            self.active_proposals -= u256(1)
-            _PayoutTarget(Address(p.recipient)).emit_transfer(value=u256(p.amount))
-        elif p.state == int(STATE_REJECTED):
-            p.state = int(STATE_FINALIZED)
-            self.reserved_funds -= u256(p.amount)
-            self.active_proposals -= u256(1)
+                p.payout_state = int(PAYOUT_NONE)
+                self.reserved_funds -= u256(p.amount)
+                self.active_proposals -= u256(1)
+        elif p.state == int(STATE_APPROVED):
+            raise ValueError("Proposal already approved")
+        elif p.state == int(STATE_FINALIZED):
+            raise ValueError("Proposal already finalized")
         else:
             raise ValueError("Proposal already finalized or not eligible")
             
         self._save_proposal(int(pid), p)
+
+    @gl.public.write
+    def claim_payout(self, pid: u256) -> None:
+        if pid >= self.proposal_count:
+            raise ValueError("Invalid proposal ID")
+        p = self._get_proposal(int(pid))
+        
+        if p.state != int(STATE_APPROVED):
+            raise ValueError("Proposal is not approved")
+            
+        sender = gl.message.sender_address.as_hex
+        is_recipient = sender.lower() == p.recipient.lower()
+        is_sponsor = sender.lower() == self.sponsor.lower()
+        is_mem = self._is_member(sender)
+        if not (is_recipient or is_sponsor or is_mem):
+            raise ValueError("Caller not authorized to claim payout")
+            
+        if p.payout_state == int(PAYOUT_PENDING):
+            raise ValueError("Payout transfer already pending")
+        if p.payout_state == int(PAYOUT_DELIVERED):
+            raise ValueError("Payout already delivered")
+        if p.payout_state not in (int(PAYOUT_APPROVED), int(PAYOUT_FAILED)):
+            raise ValueError("Payout not in claimable state")
+            
+        p.payout_state = int(PAYOUT_PENDING)
+        self._save_proposal(int(pid), p)
+        _PayoutTarget(Address(p.recipient)).emit_transfer(value=u256(p.amount))
+
+    @gl.public.write
+    def retry_payout(self, pid: u256) -> None:
+        if pid >= self.proposal_count:
+            raise ValueError("Invalid proposal ID")
+        p = self._get_proposal(int(pid))
+        
+        if p.state != int(STATE_APPROVED):
+            raise ValueError("Proposal is not approved")
+            
+        if p.payout_state == int(PAYOUT_PENDING):
+            raise ValueError("Payout transfer already pending")
+        if p.payout_state == int(PAYOUT_DELIVERED):
+            raise ValueError("Payout already delivered")
+        if p.payout_state != int(PAYOUT_FAILED):
+            raise ValueError("Payout must be in failed state to retry")
+            
+        self.claim_payout(pid)
+
+    @gl.public.write
+    def confirm_delivery(self, pid: u256) -> None:
+        if pid >= self.proposal_count:
+            raise ValueError("Invalid proposal ID")
+        p = self._get_proposal(int(pid))
+        
+        if p.state != int(STATE_APPROVED):
+            raise ValueError("Proposal is not approved")
+            
+        sender = gl.message.sender_address.as_hex
+        is_recipient = sender.lower() == p.recipient.lower()
+        is_sponsor = sender.lower() == self.sponsor.lower()
+        is_mem = self._is_member(sender)
+        if not (is_recipient or is_sponsor or is_mem):
+            raise ValueError("Caller not authorized to confirm delivery")
+            
+        if p.payout_state != int(PAYOUT_PENDING):
+            raise ValueError("Payout transfer is not pending delivery")
+            
+        p.payout_state = int(PAYOUT_DELIVERED)
+        p.state = int(STATE_FINALIZED)
+        self.reserved_funds -= u256(p.amount)
+        self.active_proposals -= u256(1)
+        self._save_proposal(int(pid), p)
+
+    @gl.public.write
+    def report_failed_delivery(self, pid: u256) -> None:
+        if pid >= self.proposal_count:
+            raise ValueError("Invalid proposal ID")
+        p = self._get_proposal(int(pid))
+        
+        if p.state != int(STATE_APPROVED):
+            raise ValueError("Proposal is not approved")
+            
+        sender = gl.message.sender_address.as_hex
+        is_recipient = sender.lower() == p.recipient.lower()
+        is_sponsor = sender.lower() == self.sponsor.lower()
+        is_mem = self._is_member(sender)
+        if not (is_recipient or is_sponsor or is_mem):
+            raise ValueError("Caller not authorized to report delivery failure")
+            
+        if p.payout_state != int(PAYOUT_PENDING):
+            raise ValueError("Payout transfer is not pending delivery")
+            
+        p.payout_state = int(PAYOUT_FAILED)
+        self._save_proposal(int(pid), p)
+
+    @gl.public.view
+    def get_payout(self, pid: u256) -> dict:
+        if pid >= self.proposal_count:
+            raise ValueError("Invalid proposal ID")
+        p = self._get_proposal(int(pid))
+        return {
+            "pid": int(pid),
+            "recipient": p.recipient,
+            "amount": p.amount,
+            "payout_state": p.payout_state,
+            "is_liability": (p.state == int(STATE_APPROVED) and p.payout_state != int(PAYOUT_DELIVERED)),
+        }
 
     @gl.public.write
     def release_expired(self, pid: u256) -> None:

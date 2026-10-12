@@ -11,6 +11,13 @@ STATE_APPROVED = 4
 STATE_REJECTED = 5
 STATE_EXPIRED = 6
 STATE_FINALIZED = 7
+
+PAYOUT_NONE = 0
+PAYOUT_APPROVED = 1
+PAYOUT_PENDING = 2
+PAYOUT_DELIVERED = 3
+PAYOUT_FAILED = 4
+
 MAX_LIFETIME_PROPOSALS = 25
 
 
@@ -108,10 +115,26 @@ def test_charter_gate_success_flow(direct_vm, direct_deploy, direct_alice, direc
     direct_vm.sender = direct_bob
     contract.vote(pid, True)
     
-    # Finalize should trigger payout
+    # Finalize should approve payout liability without prematurely decrementing reserved funds
     contract.finalize(pid)
-    
-    assert contract.get_proposal(pid)["state"] == STATE_FINALIZED
+    prop = contract.get_proposal(pid)
+    assert prop["state"] == STATE_APPROVED
+    assert prop["payout_state"] == PAYOUT_APPROVED
+    assert contract.reserved_funds == 100
+
+    # Claim payout
+    contract.claim_payout(pid)
+    prop = contract.get_proposal(pid)
+    assert prop["state"] == STATE_APPROVED
+    assert prop["payout_state"] == PAYOUT_PENDING
+    assert contract.reserved_funds == 100
+
+    # Confirm delivery
+    contract.confirm_delivery(pid)
+    prop = contract.get_proposal(pid)
+    assert prop["state"] == STATE_FINALIZED
+    assert prop["payout_state"] == PAYOUT_DELIVERED
+    assert contract.reserved_funds == 0
 
 def test_constructor_empty_charter(direct_vm, direct_deploy, direct_alice):
     alice_hex = _addr_hex(direct_alice)
@@ -354,16 +377,247 @@ def test_release_expired_eligible(direct_vm, direct_deploy, direct_alice, direct
     start_reserved = contract.reserved_funds
     contract.release_expired(pid1)
     
-    # Assert proposal is finalized
-    assert contract.get_proposal(pid1)["state"] == STATE_FINALIZED
+    # Assert proposal is approved liability
+    assert contract.get_proposal(pid1)["state"] == STATE_APPROVED
+    assert contract.get_proposal(pid1)["payout_state"] == PAYOUT_APPROVED
+    assert contract.reserved_funds == start_reserved
     
-    # Verify reservations decreased by 50
-    assert contract.reserved_funds == start_reserved - 50
+    # Claim payout
+    contract.claim_payout(pid1)
+    assert contract.get_proposal(pid1)["payout_state"] == PAYOUT_PENDING
+    assert contract.reserved_funds == start_reserved
     
     # Verify exactly one EmitExternalMessage
     emissions = sum(1 for t in direct_vm._traces if "EmitExternalMessage" in str(t))
     assert emissions == 1, f"Expected exactly 1 external message for payment to be emitted, got {emissions}"
     
+    # Confirm delivery
+    contract.confirm_delivery(pid1)
+    assert contract.get_proposal(pid1)["state"] == STATE_FINALIZED
+    assert contract.get_proposal(pid1)["payout_state"] == PAYOUT_DELIVERED
+    assert contract.reserved_funds == start_reserved - 50
+    
     # Test that finalize also fails after release_expired (only one payment)
     with direct_vm.expect_revert():
         contract.finalize(pid1)
+
+
+def test_payout_approval_preserves_reserved_funds_liability(direct_vm, direct_deploy, direct_alice, direct_bob):
+    alice_hex = _addr_hex(direct_alice)
+    bob_hex = _addr_hex(direct_bob)
+    sunset = int(time.time()) + 100000
+    contract = direct_deploy("contracts/charter_gate.py", alice_hex, "Dinners.", f"{alice_hex},{bob_hex}", 1, 1, sunset)
+
+    direct_vm.deal(direct_alice, 500)
+    direct_vm.deal(direct_vm._contract_address, 500)
+    direct_vm.sender = direct_alice
+    direct_vm.value = 500
+    contract.deposit()
+    direct_vm.value = 0
+
+    now = int(time.time())
+    evidence_hash = hashlib.sha256("Receipt for team dinner.".encode('utf-8')).hexdigest()
+    pid = contract.propose(bob_hex, 100, "Dinner", "https://raw.githubusercontent.com/evidence", evidence_hash, now+1000, now+2000)
+    _setup_mocks(direct_vm, True)
+    contract.screen_proposal(pid)
+    direct_vm.sender = direct_alice
+    contract.vote(pid, True)
+    direct_vm.sender = direct_bob
+    contract.vote(pid, True)
+
+    assert contract.reserved_funds == 100
+    contract.finalize(pid)
+
+    # Approved state: liability must be active and funds reserved
+    prop = contract.get_proposal(pid)
+    assert prop["state"] == STATE_APPROVED
+    assert prop["payout_state"] == PAYOUT_APPROVED
+    assert contract.reserved_funds == 100
+    payout_info = contract.get_payout(pid)
+    assert payout_info["payout_state"] == PAYOUT_APPROVED
+    assert payout_info["is_liability"] is True
+    assert payout_info["recipient"] == bob_hex
+    assert payout_info["amount"] == 100
+
+
+def test_payout_pending_delivery(direct_vm, direct_deploy, direct_alice, direct_bob):
+    alice_hex = _addr_hex(direct_alice)
+    bob_hex = _addr_hex(direct_bob)
+    sunset = int(time.time()) + 100000
+    contract = direct_deploy("contracts/charter_gate.py", alice_hex, "Dinners.", f"{alice_hex},{bob_hex}", 1, 1, sunset)
+
+    direct_vm.deal(direct_alice, 500)
+    direct_vm.deal(direct_vm._contract_address, 500)
+    direct_vm.sender = direct_alice
+    direct_vm.value = 500
+    contract.deposit()
+    direct_vm.value = 0
+
+    now = int(time.time())
+    evidence_hash = hashlib.sha256("Receipt for team dinner.".encode('utf-8')).hexdigest()
+    pid = contract.propose(bob_hex, 100, "Dinner", "https://raw.githubusercontent.com/evidence", evidence_hash, now+1000, now+2000)
+    _setup_mocks(direct_vm, True)
+    contract.screen_proposal(pid)
+    direct_vm.sender = direct_alice
+    contract.vote(pid, True)
+    direct_vm.sender = direct_bob
+    contract.vote(pid, True)
+    contract.finalize(pid)
+
+    # Claim moves to PAYOUT_PENDING, transfer emitted, reserved_funds protected
+    contract.claim_payout(pid)
+    prop = contract.get_proposal(pid)
+    assert prop["state"] == STATE_APPROVED
+    assert prop["payout_state"] == PAYOUT_PENDING
+    assert contract.reserved_funds == 100
+    payout_info = contract.get_payout(pid)
+    assert payout_info["payout_state"] == PAYOUT_PENDING
+    assert payout_info["is_liability"] is True
+
+
+def test_payout_duplicate_attempts_revert(direct_vm, direct_deploy, direct_alice, direct_bob):
+    alice_hex = _addr_hex(direct_alice)
+    bob_hex = _addr_hex(direct_bob)
+    sunset = int(time.time()) + 100000
+    contract = direct_deploy("contracts/charter_gate.py", alice_hex, "Dinners.", f"{alice_hex},{bob_hex}", 1, 1, sunset)
+
+    direct_vm.deal(direct_alice, 500)
+    direct_vm.deal(direct_vm._contract_address, 500)
+    direct_vm.sender = direct_alice
+    direct_vm.value = 500
+    contract.deposit()
+    direct_vm.value = 0
+
+    now = int(time.time())
+    evidence_hash = hashlib.sha256("Receipt for team dinner.".encode('utf-8')).hexdigest()
+    pid = contract.propose(bob_hex, 100, "Dinner", "https://raw.githubusercontent.com/evidence", evidence_hash, now+1000, now+2000)
+    _setup_mocks(direct_vm, True)
+    contract.screen_proposal(pid)
+    direct_vm.sender = direct_alice
+    contract.vote(pid, True)
+    direct_vm.sender = direct_bob
+    contract.vote(pid, True)
+    contract.finalize(pid)
+
+    # Finalize cannot be called again
+    with direct_vm.expect_revert("Proposal already approved"):
+        contract.finalize(pid)
+
+    # First claim succeeds
+    contract.claim_payout(pid)
+
+    # Repeated claim while pending reverts
+    with direct_vm.expect_revert("Payout transfer already pending"):
+        contract.claim_payout(pid)
+
+    # Retry while pending reverts
+    with direct_vm.expect_revert("Payout transfer already pending"):
+        contract.retry_payout(pid)
+
+    # Confirm delivery
+    contract.confirm_delivery(pid)
+
+    # Cannot claim or retry after delivery
+    with direct_vm.expect_revert("Proposal is not approved"):
+        contract.claim_payout(pid)
+
+
+def test_payout_failed_delivery_recovery_and_retry(direct_vm, direct_deploy, direct_alice, direct_bob):
+    alice_hex = _addr_hex(direct_alice)
+    bob_hex = _addr_hex(direct_bob)
+    sunset = int(time.time()) + 100000
+    contract = direct_deploy("contracts/charter_gate.py", alice_hex, "Dinners.", f"{alice_hex},{bob_hex}", 1, 1, sunset)
+
+    direct_vm.deal(direct_alice, 500)
+    direct_vm.deal(direct_vm._contract_address, 500)
+    direct_vm.sender = direct_alice
+    direct_vm.value = 500
+    contract.deposit()
+    direct_vm.value = 0
+
+    now = int(time.time())
+    evidence_hash = hashlib.sha256("Receipt for team dinner.".encode('utf-8')).hexdigest()
+    pid = contract.propose(bob_hex, 100, "Dinner", "https://raw.githubusercontent.com/evidence", evidence_hash, now+1000, now+2000)
+    _setup_mocks(direct_vm, True)
+    contract.screen_proposal(pid)
+    direct_vm.sender = direct_alice
+    contract.vote(pid, True)
+    direct_vm.sender = direct_bob
+    contract.vote(pid, True)
+    contract.finalize(pid)
+
+    # Claim payout puts in pending
+    contract.claim_payout(pid)
+    assert contract.get_payout(pid)["payout_state"] == PAYOUT_PENDING
+
+    # Report delivery failure
+    contract.report_failed_delivery(pid)
+    prop = contract.get_proposal(pid)
+    assert prop["state"] == STATE_APPROVED
+    assert prop["payout_state"] == PAYOUT_FAILED
+    assert contract.reserved_funds == 100  # Liability protected!
+    assert contract.get_payout(pid)["is_liability"] is True
+
+    # Retry payout puts it back to pending
+    contract.retry_payout(pid)
+    assert contract.get_payout(pid)["payout_state"] == PAYOUT_PENDING
+    assert contract.reserved_funds == 100
+
+    # Finally delivery succeeds and confirms
+    contract.confirm_delivery(pid)
+    assert contract.get_proposal(pid)["state"] == STATE_FINALIZED
+    assert contract.get_payout(pid)["payout_state"] == PAYOUT_DELIVERED
+    assert contract.reserved_funds == 0
+
+
+def test_payout_sponsor_withdrawal_protection_against_liabilities(direct_vm, direct_deploy, direct_alice, direct_bob):
+    alice_hex = _addr_hex(direct_alice)
+    bob_hex = _addr_hex(direct_bob)
+    now = int(time.time())
+    sunset = now + 1000
+    contract = direct_deploy("contracts/charter_gate.py", alice_hex, "Dinners.", f"{alice_hex},{bob_hex}", 1, 1, sunset)
+
+    direct_vm.deal(direct_alice, 500)
+    direct_vm.deal(direct_vm._contract_address, 500)
+    direct_vm.sender = direct_alice
+    direct_vm.value = 500
+    contract.deposit()
+    direct_vm.value = 0
+
+    evidence_hash = hashlib.sha256("Receipt for team dinner.".encode('utf-8')).hexdigest()
+    pid = contract.propose(bob_hex, 400, "Dinner", "https://raw.githubusercontent.com/evidence", evidence_hash, now+200, now+400)
+    _setup_mocks(direct_vm, True)
+    contract.screen_proposal(pid)
+    direct_vm.sender = direct_alice
+    contract.vote(pid, True)
+    direct_vm.sender = direct_bob
+    contract.vote(pid, True)
+    contract.finalize(pid)
+
+    # Warp past sunset
+    from datetime import datetime, timezone
+    new_time = datetime.fromtimestamp(now + 2000, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000000Z")
+    direct_vm.warp(new_time)
+    import genlayer
+    genlayer.message.datetime = new_time
+
+    # Treasury balance: 500, Reserved: 400 (liability for approved payout)
+    # Sponsor attempts to withdraw 200 (which would infringe on the 400 liability) -> must revert!
+    direct_vm.sender = direct_alice
+    with direct_vm.expect_revert("Insufficient balance (accounting for reserved funds)"):
+        contract.withdraw_treasury(200)
+
+    # Sponsor attempts to withdraw 101 (surplus is only 100) -> must revert!
+    direct_vm.sender = direct_alice
+    with direct_vm.expect_revert("Insufficient balance (accounting for reserved funds)"):
+        contract.withdraw_treasury(101)
+
+    # Sponsor CAN withdraw unreserved surplus (100)
+    contract.withdraw_treasury(100)
+
+    # After surplus is withdrawn, contract balance matches reserved liability (400)
+    direct_vm.deal(direct_vm._contract_address, 400)
+    with direct_vm.expect_revert("Insufficient balance (accounting for reserved funds)"):
+        contract.withdraw_treasury(1)
+
+

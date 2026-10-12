@@ -41,9 +41,9 @@ def deploy():
         args=[
             str(account.address),
             "Only software subscriptions.",
-            f"{alice},{bob}",
-            2,
-            2,
+            str(account.address),
+            1,
+            1,
             now + 86400 * 365
         ],
         account=account,

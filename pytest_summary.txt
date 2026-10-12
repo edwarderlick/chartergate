@@ -1,8 +1,10 @@
-Command: .venv312\Scripts\python.exe -m pytest tests\direct\test_charter_gate.py -q
-Result: 12 passed in 7.32s
+﻿============================= test session starts =============================
+platform win32 -- Python 3.12.10, pytest-9.1.1, pluggy-1.6.0
+rootdir: D:\CharterGate
+configfile: pyproject.toml
+plugins: genlayer-test-0.30.0rc2
+collected 17 items
 
-Additional schema checks:
-- .venv312\Scripts\python.exe -m genvm_linter.cli validate contracts\charter_gate.py
-  Result: Validation passed; Contract: CharterGate; Methods: 9 (2 view, 7 write)
-- node scripts\verify_chartergate.mjs --schema-only
-  Result: original public __on_errored_message__ rejection saved; corrected schema accepted.
+tests\direct\test_charter_gate.py .................                      [100%]
+
+============================= 17 passed in 3.17s ==============================
